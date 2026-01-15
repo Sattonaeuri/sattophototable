@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>현장 사진 Pro (OLED)</title>
+    <title>현장 사진 Pro</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/piexifjs/1.0.6/piexif.min.js"></script>
     <style>
@@ -59,6 +59,13 @@
     <button class="btn-blue" onclick="document.getElementById('imageInput').click()">📸 사진 선택 & 작업 시작</button>
     <div id="status">대기 중...</div>
     <button id="openFilesBtn" class="btn-green" onclick="openFilesApp()">📂 파일 앱 열기</button>
+</div>
+
+<div class="card">
+    <h3>💾 템플릿 백업 & 복원</h3>
+    <button class="btn-blue" onclick="exportTemplates()">📤 템플릿 내보내기 (JSON)</button>
+    <input type="file" id="importInput" accept="application/json" style="display: none;" onchange="importTemplates(event)">
+    <button class="btn-green" onclick="document.getElementById('importInput').click()">📥 템플릿 가져오기 (JSON)</button>
 </div>
 
 <script>
@@ -265,6 +272,61 @@
         const t = JSON.parse(localStorage.getItem(storageKey) || '{}');
         s.innerHTML = '<option value="">템플릿 선택</option>';
         for(let n in t) s.innerHTML += `<option value="${n}">${n}</option>`;
+    }
+
+    // 템플릿 내보내기 (JSON 파일로 다운로드)
+    function exportTemplates() {
+        const templates = localStorage.getItem(storageKey);
+        if (!templates || templates === '{}') {
+            alert('저장된 템플릿이 없습니다.');
+            return;
+        }
+        
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(templates);
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", "photo_pro_templates.json");
+        downloadAnchor.click();
+        alert('템플릿을 내보냈습니다!');
+    }
+
+    // 템플릿 가져오기 (JSON 파일 업로드)
+    function importTemplates(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const importedData = JSON.parse(e.target.result);
+                
+                // 기존 템플릿과 병합할지 확인
+                const existing = JSON.parse(localStorage.getItem(storageKey) || '{}');
+                const existingCount = Object.keys(existing).length;
+                
+                let shouldMerge = true;
+                if (existingCount > 0) {
+                    shouldMerge = confirm(`기존 템플릿 ${existingCount}개가 있습니다.\n\n확인: 기존 템플릿과 병합 (중복 이름은 덮어쓰기)\n취소: 기존 템플릿 삭제 후 가져오기`);
+                }
+                
+                if (shouldMerge) {
+                    // 병합
+                    const merged = {...existing, ...importedData};
+                    localStorage.setItem(storageKey, JSON.stringify(merged));
+                } else {
+                    // 교체
+                    localStorage.setItem(storageKey, JSON.stringify(importedData));
+                }
+                
+                updateTmplList();
+                alert('템플릿을 가져왔습니다!');
+                document.getElementById('importInput').value = ''; // 파일 입력 초기화
+            } catch (error) {
+                alert('올바른 템플릿 파일이 아닙니다.');
+                console.error(error);
+            }
+        };
+        reader.readAsText(file);
     }
 
     window.onload = () => { renderFields(); updateTmplList(); };
