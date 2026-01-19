@@ -299,6 +299,7 @@
         <button class="btn-blue" onclick="document.getElementById('imageInput').click()">📸 사진 선택 & 작업 시작</button>
         <div id="status">대기 중...</div>
         <button id="openFilesBtn" class="btn-green" onclick="openFilesApp()">📂 파일 앱 열기</button>
+        <button id="uploadToDriveBtn" class="btn-purple" onclick="manualUploadToDrive()" style="display: none;">☁️ Drive에 업로드</button>
         <button id="openDriveBtn" class="btn-purple" onclick="openDriveFolder()">📂 Drive에서 보기</button>
     </div>
 
@@ -335,6 +336,15 @@
             </label>
         </div>
         <div class="setting-description">활성화 시 사진 처리 후 자동으로 Drive에 업로드</div>
+        
+        <div class="toggle-row" style="margin-top: 15px;">
+            <span class="toggle-label">확인 후 업로드</span>
+            <label class="switch">
+                <input type="checkbox" id="driveManualUpload" onchange="toggleDriveManualUpload()">
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="setting-description">비활성화 시 즉시 업로드, 활성화 시 확인 후 버튼 클릭으로 업로드</div>
     </div>
 
     <div class="card">
@@ -364,7 +374,7 @@
     
     // ========== Google Drive API 설정 ==========
     // TODO: 여기에 본인의 클라이언트 ID를 입력하세요!
-    const CLIENT_ID = '1020242242798-ai14uvgmjsvmvbqp4fpb2unb6hjnqrr8.apps.googleusercontent.com';
+    const CLIENT_ID = 'YOUR_CLIENT_ID_HERE.apps.googleusercontent.com';
     const API_KEY = ''; // API 키는 선택사항
     const SCOPES = 'https://www.googleapis.com/auth/drive.file';
     
@@ -372,6 +382,8 @@
     let tokenClient;
     let accessToken = null;
     let lastUploadedFolderId = null;
+    let currentZipBlob = null; // 현재 생성된 ZIP 파일
+    let currentZipFileName = null; // 현재 ZIP 파일명
     
     // ========== 기본 변수 ==========
     const statusText = document.getElementById('status');
@@ -441,7 +453,8 @@
         const driveData = {
             access_token: response.access_token,
             expires_at: Date.now() + (response.expires_in * 1000),
-            autoUpload: document.getElementById('driveAutoUpload').checked
+            autoUpload: document.getElementById('driveAutoUpload').checked,
+            manualUpload: document.getElementById('driveManualUpload').checked
         };
         
         // 사용자 이메일 가져오기
@@ -474,6 +487,7 @@
         
         // 자동 업로드 설정 복원
         document.getElementById('driveAutoUpload').checked = driveData.autoUpload || false;
+        document.getElementById('driveManualUpload').checked = driveData.manualUpload || false;
         
         return true;
     }
@@ -512,6 +526,17 @@
         const saved = localStorage.getItem(driveKey);
         if (saved) {
             const driveData = JSON.parse(saved);
+            driveData.autoUpload = document.getElementById('driveAutoUpload').checked;
+            driveData.manualUpload = document.getElementById('driveManualUpload').checked;
+            localStorage.setItem(driveKey, JSON.stringify(driveData));
+        }
+    }
+    
+    function toggleDriveManualUpload() {
+        const saved = localStorage.getItem(driveKey);
+        if (saved) {
+            const driveData = JSON.parse(saved);
+            driveData.manualUpload = document.getElementById('driveManualUpload').checked;
             driveData.autoUpload = document.getElementById('driveAutoUpload').checked;
             localStorage.setItem(driveKey, JSON.stringify(driveData));
         }
@@ -554,6 +579,35 @@
             window.open(`https://drive.google.com/file/d/${lastUploadedFolderId}/view`, '_blank');
         } else {
             window.open('https://drive.google.com/drive/my-drive', '_blank');
+        }
+    }
+    
+    // 수동 업로드 함수
+    async function manualUploadToDrive() {
+        if (!currentZipBlob || !currentZipFileName) {
+            alert('업로드할 파일이 없습니다.');
+            return;
+        }
+        
+        if (!accessToken) {
+            alert('Google Drive에 연결되어 있지 않습니다. 설정에서 연결해주세요.');
+            return;
+        }
+        
+        try {
+            statusText.innerText = 'Google Drive에 업로드 중...';
+            document.getElementById('uploadToDriveBtn').disabled = true;
+            
+            await uploadToDrive(currentZipBlob, currentZipFileName);
+            
+            statusText.innerText = 'Drive 업로드 완료!';
+            document.getElementById('uploadToDriveBtn').style.display = 'none';
+            document.getElementById('openDriveBtn').style.display = 'block';
+        } catch (error) {
+            console.error('Drive 업로드 실패:', error);
+            statusText.innerText = 'Drive 업로드 실패';
+            alert('Drive 업로드에 실패했습니다. 설정에서 다시 연결해주세요.');
+            document.getElementById('uploadToDriveBtn').disabled = false;
         }
     }
 
@@ -707,35 +761,41 @@
 
         const content = await zip.generateAsync({type: "blob"});
         
-        // Drive 자동 업로드 확인
+        // ZIP 파일 저장 (수동 업로드용)
+        currentZipBlob = content;
+        currentZipFileName = `${zipFileName}.zip`;
+        
+        // 1단계: 로컬 다운로드 (항상)
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(content);
+        link.download = currentZipFileName;
+        link.click();
+        statusText.innerText = "로컬 저장 완료!";
+        openFilesBtn.style.display = 'block';
+        
+        // 2단계: Drive 업로드 (설정에 따라)
         const driveData = localStorage.getItem(driveKey);
         const shouldUploadToDrive = driveData && JSON.parse(driveData).autoUpload && accessToken;
+        const isManualMode = driveData && JSON.parse(driveData).manualUpload;
         
         if (shouldUploadToDrive) {
-            try {
-                statusText.innerText = 'Google Drive에 업로드 중...';
-                await uploadToDrive(content, `${zipFileName}.zip`);
-                statusText.innerText = 'Drive 업로드 완료!';
-                openDriveBtn.style.display = 'block';
-            } catch (error) {
-                console.error('Drive 업로드 실패:', error);
-                statusText.innerText = 'Drive 업로드 실패. 로컬 다운로드 진행...';
-                // 실패 시 로컬 다운로드
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(content);
-                link.download = `${zipFileName}.zip`;
-                link.click();
-                statusText.innerText = "로컬 저장 완료!";
-                openFilesBtn.style.display = 'block';
+            if (isManualMode) {
+                // 확인 후 업로드 모드: 버튼 표시
+                statusText.innerText = "로컬 저장 완료! 확인 후 Drive에 업로드하세요.";
+                document.getElementById('uploadToDriveBtn').style.display = 'block';
+                document.getElementById('uploadToDriveBtn').disabled = false;
+            } else {
+                // 자동 업로드 모드: 즉시 업로드
+                try {
+                    statusText.innerText = 'Google Drive에 업로드 중...';
+                    await uploadToDrive(content, currentZipFileName);
+                    statusText.innerText = '로컬 저장 & Drive 업로드 완료!';
+                    document.getElementById('openDriveBtn').style.display = 'block';
+                } catch (error) {
+                    console.error('Drive 업로드 실패:', error);
+                    statusText.innerText = '로컬 저장 완료! (Drive 업로드 실패)';
+                }
             }
-        } else {
-            // 로컬 다운로드
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(content);
-            link.download = `${zipFileName}.zip`;
-            link.click();
-            statusText.innerText = "저장 완료!";
-            openFilesBtn.style.display = 'block';
         }
     });
 
