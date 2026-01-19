@@ -166,9 +166,9 @@
         .btn-purple { background: #bf5af2; color: white; width: 100%; margin-top: 10px; }
         
         #status { text-align: center; margin-top: 15px; font-weight: 600; color: #0a84ff; }
-        #openFilesBtn, #openDriveBtn, #openDropboxBtn { display: none; }
+        #openFilesBtn, #openDriveBtn { display: none; }
         
-        /* 테마 토글 & 기타 토글 스위치 */
+        /* 테마 토글 스위치 */
         .toggle-row {
             display: flex;
             align-items: center;
@@ -299,8 +299,7 @@
         <button class="btn-blue" onclick="document.getElementById('imageInput').click()">📸 사진 선택 & 작업 시작</button>
         <div id="status">대기 중...</div>
         <button id="openFilesBtn" class="btn-green" onclick="openFilesApp()">📂 파일 앱 열기</button>
-        <button id="uploadToCloudBtn" class="btn-purple" onclick="manualUploadToCloud()" style="display: none;">☁️ 클라우드에 업로드</button>
-        <button id="openDropboxBtn" class="btn-purple" onclick="openDropboxFolder()" style="display: none;">📂 Dropbox에서 보기</button>
+        <button id="uploadToDriveBtn" class="btn-purple" onclick="manualUploadToDrive()" style="display: none;">☁️ Drive에 업로드</button>
         <button id="openDriveBtn" class="btn-purple" onclick="openDriveFolder()" style="display: none;">📂 Drive에서 보기</button>
     </div>
 
@@ -317,33 +316,6 @@
     <div class="header">
         <button class="back-btn" onclick="showMain()">← 뒤로가기</button>
         <h1 style="margin-left: auto;">설정</h1>
-    </div>
-
-    <div class="card">
-        <h3>📦 Dropbox 연동 (권장)</h3>
-        <div class="cloud-status" id="dropboxStatus">
-            <div class="status-indicator" id="dropboxIndicator"></div>
-            <span class="cloud-email" id="dropboxEmail">연결되지 않음</span>
-        </div>
-        <button class="btn-blue" id="dropboxConnectBtn" onclick="connectDropbox()">Dropbox 계정 연결</button>
-        <button class="btn-red" id="dropboxDisconnectBtn" onclick="disconnectDropbox()" style="display: none; width: 100%;">연결 해제</button>
-        
-        <div class="toggle-row" style="margin-top: 15px;">
-            <span class="toggle-label">Dropbox 자동 업로드</span>
-            <label class="switch">
-                <input type="checkbox" id="dropboxAutoUpload" onchange="toggleDropboxSettings()">
-                <span class="slider"></span>
-            </label>
-        </div>
-        
-        <div class="toggle-row" style="margin-top: 15px;">
-            <span class="toggle-label">확인 후 업로드</span>
-            <label class="switch">
-                <input type="checkbox" id="dropboxManualUpload" onchange="toggleDropboxSettings()">
-                <span class="slider"></span>
-            </label>
-        </div>
-        <div class="setting-description">✨ 한 번 연결하면 재연결 없이 영구 사용 가능!</div>
     </div>
 
     <div class="card">
@@ -397,25 +369,16 @@
     const storageKey = 'photo_pro_v8_final';
     const themeKey = 'photo_pro_theme';
     const driveKey = 'photo_pro_drive';
-    const dropboxKey = 'photo_pro_dropbox';
     
     // ========== Google Drive API 설정 ==========
     const GOOGLE_CLIENT_ID = '1020242242798-ai14uvgmjsvmvbqp4fpb2unb6hjnqrr8.apps.googleusercontent.com';
     const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file';
-    
-    // ========== Dropbox API 설정 ==========
-    const DROPBOX_CLIENT_ID = 'eafpljx4claj83h';
-    const DROPBOX_REDIRECT_URI = window.location.origin + window.location.pathname;
     
     // ========== 전역 변수 ==========
     let gapiInited = false;
     let googleTokenClient;
     let googleAccessToken = null;
     let googleLastFolderId = null;
-    
-    let dropboxAccessToken = null;
-    let dropboxRefreshToken = null;
-    let dropboxLastPath = null;
     
     let currentZipBlob = null;
     let currentZipFileName = null;
@@ -459,316 +422,6 @@
                 alert('Google Drive에 연결되었습니다!');
             },
         });
-    }
-
-    // ========== Dropbox OAuth (PKCE 방식 - iOS 호환) ==========
-    
-    // PKCE용 랜덤 문자열 생성 (iOS Safari 호환)
-    function generateRandomString(length) {
-        const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-        let text = '';
-        
-        // crypto.getRandomValues 안전하게 사용
-        if (window.crypto && window.crypto.getRandomValues) {
-            const array = new Uint8Array(length);
-            window.crypto.getRandomValues(array);
-            for (let i = 0; i < length; i++) {
-                text += possible.charAt(array[i] % possible.length);
-            }
-        } else {
-            // fallback for older browsers
-            for (let i = 0; i < length; i++) {
-                text += possible.charAt(Math.floor(Math.random() * possible.length));
-            }
-        }
-        return text;
-    }
-    
-    // SHA-256 해시 생성 (iOS Safari 호환)
-    async function sha256(plain) {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(plain);
-        
-        // SubtleCrypto 사용 가능 여부 확인
-        if (window.crypto && window.crypto.subtle && window.crypto.subtle.digest) {
-            return await window.crypto.subtle.digest('SHA-256', data);
-        } else {
-            // Fallback: SHA-256 없이 code_verifier를 그대로 challenge로 사용 (plain method)
-            // 보안은 약간 떨어지지만 작동은 됨
-            throw new Error('SHA-256 not supported');
-        }
-    }
-    
-    // Base64 URL 인코딩
-    function base64urlencode(arrayBuffer) {
-        const bytes = new Uint8Array(arrayBuffer);
-        let binary = '';
-        for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        return btoa(binary)
-            .replace(/\+/g, "-")
-            .replace(/\//g, "_")
-            .replace(/=+$/, "");
-    }
-    
-    async function connectDropbox() {
-        try {
-            // PKCE code verifier 생성
-            const codeVerifier = generateRandomString(128);
-            sessionStorage.setItem('dropbox_code_verifier', codeVerifier);
-            
-            let authUrl;
-            
-            // Code challenge 생성 시도
-            try {
-                const hashed = await sha256(codeVerifier);
-                const codeChallenge = base64urlencode(hashed);
-                
-                // S256 방식으로 인증 URL 생성
-                authUrl = `https://www.dropbox.com/oauth2/authorize?` +
-                    `client_id=${DROPBOX_CLIENT_ID}&` +
-                    `response_type=code&` +
-                    `redirect_uri=${encodeURIComponent(DROPBOX_REDIRECT_URI)}&` +
-                    `code_challenge=${codeChallenge}&` +
-                    `code_challenge_method=S256&` +
-                    `token_access_type=offline`;
-            } catch (e) {
-                // SHA-256 실패시 plain 방식 사용
-                console.log('Using plain PKCE method');
-                authUrl = `https://www.dropbox.com/oauth2/authorize?` +
-                    `client_id=${DROPBOX_CLIENT_ID}&` +
-                    `response_type=code&` +
-                    `redirect_uri=${encodeURIComponent(DROPBOX_REDIRECT_URI)}&` +
-                    `code_challenge=${codeVerifier}&` +
-                    `code_challenge_method=plain&` +
-                    `token_access_type=offline`;
-            }
-            
-            sessionStorage.setItem('dropbox_auth_pending', 'true');
-            window.location.href = authUrl;
-        } catch (error) {
-            console.error('Dropbox 연결 시작 실패:', error);
-            alert('Dropbox 연결을 시작할 수 없습니다: ' + error.message);
-        }
-    }
-
-    async function handleDropboxCallback() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('code');
-        
-        if (code && sessionStorage.getItem('dropbox_auth_pending')) {
-            sessionStorage.removeItem('dropbox_auth_pending');
-            
-            const codeVerifier = sessionStorage.getItem('dropbox_code_verifier');
-            sessionStorage.removeItem('dropbox_code_verifier');
-            
-            if (!codeVerifier) {
-                alert('인증 과정에 오류가 발생했습니다. 다시 시도해주세요.');
-                window.history.replaceState({}, document.title, window.location.pathname);
-                return;
-            }
-            
-            try {
-                // 토큰 교환
-                const response = await fetch('https://api.dropboxapi.com/oauth2/token', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: new URLSearchParams({
-                        code: code,
-                        grant_type: 'authorization_code',
-                        client_id: DROPBOX_CLIENT_ID,
-                        redirect_uri: DROPBOX_REDIRECT_URI,
-                        code_verifier: codeVerifier
-                    })
-                });
-                
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`Token exchange failed: ${errorText}`);
-                }
-                
-                const data = await response.json();
-                
-                if (data.access_token) {
-                    dropboxAccessToken = data.access_token;
-                    dropboxRefreshToken = data.refresh_token;
-                    
-                    // 계정 정보 가져오기
-                    const accountInfo = await fetch('https://api.dropboxapi.com/2/users/get_current_account', {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${dropboxAccessToken}`
-                        }
-                    });
-                    
-                    if (!accountInfo.ok) {
-                        throw new Error('Failed to get account info');
-                    }
-                    
-                    const accountData = await accountInfo.json();
-                    
-                    // 저장
-                    const dropboxData = {
-                        access_token: dropboxAccessToken,
-                        refresh_token: dropboxRefreshToken,
-                        expires_at: Date.now() + (14400 * 1000), // 4시간
-                        email: accountData.email,
-                        autoUpload: false,
-                        manualUpload: false
-                    };
-                    
-                    localStorage.setItem(dropboxKey, JSON.stringify(dropboxData));
-                    
-                    // URL 정리
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                    
-                    // 설정 화면으로 이동
-                    showSettings();
-                    
-                    await updateDropboxStatus();
-                    alert('Dropbox에 연결되었습니다!');
-                } else {
-                    throw new Error(data.error_description || 'No access token received');
-                }
-            } catch (error) {
-                console.error('Dropbox 인증 실패:', error);
-                alert('Dropbox 연결에 실패했습니다.\n' + error.message);
-                window.history.replaceState({}, document.title, window.location.pathname);
-            }
-        }
-    }
-
-    async function disconnectDropbox() {
-        if (confirm('Dropbox 연결을 해제하시겠습니까?')) {
-            localStorage.removeItem(dropboxKey);
-            dropboxAccessToken = null;
-            dropboxRefreshToken = null;
-            await updateDropboxStatus();
-            alert('연결이 해제되었습니다.');
-        }
-    }
-
-    async function loadDropboxToken() {
-        const saved = localStorage.getItem(dropboxKey);
-        if (!saved) return false;
-        
-        const dropboxData = JSON.parse(saved);
-        
-        // 토큰 만료 확인 (30분 여유)
-        if (Date.now() >= (dropboxData.expires_at - 1800000)) {
-            // Refresh token으로 갱신
-            if (dropboxData.refresh_token) {
-                try {
-                    const response = await fetch('https://api.dropboxapi.com/oauth2/token', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded',
-                        },
-                        body: new URLSearchParams({
-                            grant_type: 'refresh_token',
-                            refresh_token: dropboxData.refresh_token,
-                            client_id: DROPBOX_CLIENT_ID
-                        })
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (data.access_token) {
-                        dropboxAccessToken = data.access_token;
-                        
-                        // 새 토큰 저장
-                        dropboxData.access_token = data.access_token;
-                        dropboxData.expires_at = Date.now() + (14400 * 1000);
-                        localStorage.setItem(dropboxKey, JSON.stringify(dropboxData));
-                    }
-                } catch (error) {
-                    console.error('토큰 갱신 실패:', error);
-                    return false;
-                }
-            } else {
-                return false;
-            }
-        } else {
-            dropboxAccessToken = dropboxData.access_token;
-            dropboxRefreshToken = dropboxData.refresh_token;
-        }
-        
-        // 설정 복원
-        document.getElementById('dropboxAutoUpload').checked = dropboxData.autoUpload || false;
-        document.getElementById('dropboxManualUpload').checked = dropboxData.manualUpload || false;
-        
-        return true;
-    }
-
-    async function updateDropboxStatus() {
-        const status = document.getElementById('dropboxStatus');
-        const indicator = document.getElementById('dropboxIndicator');
-        const email = document.getElementById('dropboxEmail');
-        const connectBtn = document.getElementById('dropboxConnectBtn');
-        const disconnectBtn = document.getElementById('dropboxDisconnectBtn');
-        
-        const saved = localStorage.getItem(dropboxKey);
-        
-        if (dropboxAccessToken && saved) {
-            const dropboxData = JSON.parse(saved);
-            status.classList.add('connected');
-            indicator.classList.add('connected');
-            email.textContent = dropboxData.email || '연결됨';
-            connectBtn.style.display = 'none';
-            disconnectBtn.style.display = 'block';
-        } else {
-            status.classList.remove('connected');
-            indicator.classList.remove('connected');
-            email.textContent = '연결되지 않음';
-            connectBtn.style.display = 'block';
-            disconnectBtn.style.display = 'none';
-        }
-    }
-
-    function toggleDropboxSettings() {
-        const saved = localStorage.getItem(dropboxKey);
-        if (saved) {
-            const dropboxData = JSON.parse(saved);
-            dropboxData.autoUpload = document.getElementById('dropboxAutoUpload').checked;
-            dropboxData.manualUpload = document.getElementById('dropboxManualUpload').checked;
-            localStorage.setItem(dropboxKey, JSON.stringify(dropboxData));
-        }
-    }
-
-    async function uploadToDropbox(blob, fileName) {
-        if (!dropboxAccessToken) {
-            throw new Error('Dropbox에 연결되어 있지 않습니다.');
-        }
-
-        const response = await fetch('https://content.dropboxapi.com/2/files/upload', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${dropboxAccessToken}`,
-                'Content-Type': 'application/octet-stream',
-                'Dropbox-API-Arg': JSON.stringify({
-                    path: '/' + fileName,
-                    mode: 'add',
-                    autorename: true,
-                    mute: false
-                })
-            },
-            body: blob
-        });
-
-        if (!response.ok) {
-            throw new Error('Dropbox 업로드 실패');
-        }
-
-        const result = await response.json();
-        dropboxLastPath = result.path_display;
-        return result;
-    }
-
-    function openDropboxFolder() {
-        window.open('https://www.dropbox.com/home', '_blank');
     }
 
     // ========== Google Drive 관리 ==========
@@ -929,48 +582,37 @@
         }
     }
 
-    // ========== 클라우드 업로드 통합 ==========
-    async function manualUploadToCloud() {
+    // ========== Drive 수동 업로드 ==========
+    async function manualUploadToDrive() {
         if (!currentZipBlob || !currentZipFileName) {
             alert('업로드할 파일이 없습니다.');
             return;
         }
         
-        // Dropbox 우선
-        const dropboxData = localStorage.getItem(dropboxKey);
-        const driveData = localStorage.getItem(driveKey);
+        if (!await ensureValidGoogleToken()) {
+            alert('Google Drive 연결이 만료되었습니다.\n설정에서 다시 연결해주세요.');
+            return;
+        }
         
-        const dropboxSettings = dropboxData ? JSON.parse(dropboxData) : null;
-        const driveSettings = driveData ? JSON.parse(driveData) : null;
-        
-        const useDropbox = dropboxSettings && dropboxSettings.autoUpload && dropboxAccessToken;
-        const useDrive = driveSettings && driveSettings.autoUpload && googleAccessToken;
-        
-        if (!useDropbox && !useDrive) {
-            alert('클라우드에 연결되어 있지 않습니다.\n설정에서 연결 및 자동 업로드를 활성화해주세요.');
+        if (!googleAccessToken) {
+            alert('Google Drive에 연결되어 있지 않습니다.\n설정에서 연결 및 자동 업로드를 활성화해주세요.');
             return;
         }
         
         try {
-            statusText.innerText = '클라우드에 업로드 중...';
-            document.getElementById('uploadToCloudBtn').disabled = true;
+            statusText.innerText = 'Google Drive에 업로드 중...';
+            document.getElementById('uploadToDriveBtn').disabled = true;
             
-            if (useDropbox) {
-                await uploadToDropbox(currentZipBlob, currentZipFileName);
-                statusText.innerText = 'Dropbox 업로드 완료!';
-                document.getElementById('openDropboxBtn').style.display = 'block';
-            } else if (useDrive) {
-                await uploadToGoogleDrive(currentZipBlob, currentZipFileName);
-                statusText.innerText = 'Drive 업로드 완료!';
-                document.getElementById('openDriveBtn').style.display = 'block';
-            }
+            await uploadToGoogleDrive(currentZipBlob, currentZipFileName);
             
-            document.getElementById('uploadToCloudBtn').style.display = 'none';
+            statusText.innerText = 'Drive 업로드 완료!';
+            document.getElementById('uploadToDriveBtn').style.display = 'none';
+            document.getElementById('openDriveBtn').style.display = 'block';
         } catch (error) {
             console.error('업로드 실패:', error);
             statusText.innerText = '업로드 실패: ' + error.message;
             alert('업로드에 실패했습니다.\n' + error.message + '\n\n설정에서 다시 연결해주세요.');
-            document.getElementById('uploadToCloudBtn').disabled = false;
+            document.getElementById('uploadToDriveBtn').disabled = false;
         }
     }
 
@@ -1091,8 +733,8 @@
         if (!files.length) return;
         
         openFilesBtn.style.display = 'none';
-        document.getElementById('openDropboxBtn').style.display = 'none';
         document.getElementById('openDriveBtn').style.display = 'none';
+        document.getElementById('uploadToDriveBtn').style.display = 'none';
         statusText.innerText = '촬영 시간 분석 중...';
         
         const filesWithTime = await Promise.all(
@@ -1136,44 +778,21 @@
         statusText.innerText = "로컬 저장 완료!";
         openFilesBtn.style.display = 'block';
         
-        // 2. 클라우드 업로드 (설정에 따라)
-        const dropboxData = localStorage.getItem(dropboxKey);
+        // 2. Drive 업로드 (설정에 따라)
         const driveData = localStorage.getItem(driveKey);
-        
-        const dropboxSettings = dropboxData ? JSON.parse(dropboxData) : null;
         const driveSettings = driveData ? JSON.parse(driveData) : null;
+        const useDrive = driveSettings && driveSettings.autoUpload && googleAccessToken;
         
-        const useDropbox = dropboxSettings && dropboxSettings.autoUpload && dropboxAccessToken;
-        const useDrive = !useDropbox && driveSettings && driveSettings.autoUpload && googleAccessToken;
-        
-        if (useDropbox) {
-            const isManual = dropboxSettings.manualUpload;
-            
-            if (isManual) {
-                statusText.innerText = "로컬 저장 완료! 확인 후 클라우드에 업로드하세요.";
-                document.getElementById('uploadToCloudBtn').style.display = 'block';
-                document.getElementById('uploadToCloudBtn').disabled = false;
-            } else {
-                try {
-                    statusText.innerText = '클라우드에 업로드 중...';
-                    await uploadToDropbox(content, currentZipFileName);
-                    statusText.innerText = '로컬 저장 & Dropbox 업로드 완료!';
-                    document.getElementById('openDropboxBtn').style.display = 'block';
-                } catch (error) {
-                    console.error('Dropbox 업로드 실패:', error);
-                    statusText.innerText = '로컬 저장 완료! (Dropbox 업로드 실패: ' + error.message + ')';
-                }
-            }
-        } else if (useDrive) {
+        if (useDrive) {
             const isManual = driveSettings.manualUpload;
             
             if (isManual) {
-                statusText.innerText = "로컬 저장 완료! 확인 후 클라우드에 업로드하세요.";
-                document.getElementById('uploadToCloudBtn').style.display = 'block';
-                document.getElementById('uploadToCloudBtn').disabled = false;
+                statusText.innerText = "로컬 저장 완료! 확인 후 Drive에 업로드하세요.";
+                document.getElementById('uploadToDriveBtn').style.display = 'block';
+                document.getElementById('uploadToDriveBtn').disabled = false;
             } else {
                 try {
-                    statusText.innerText = '클라우드에 업로드 중...';
+                    statusText.innerText = 'Google Drive에 업로드 중...';
                     await uploadToGoogleDrive(content, currentZipFileName);
                     statusText.innerText = '로컬 저장 & Drive 업로드 완료!';
                     document.getElementById('openDriveBtn').style.display = 'block';
@@ -1425,13 +1044,6 @@
         if (typeof google !== 'undefined') {
             gisLoaded();
         }
-        
-        // Dropbox 토큰 로드
-        await loadDropboxToken();
-        await updateDropboxStatus();
-        
-        // Dropbox OAuth 콜백 처리
-        await handleDropboxCallback();
     };
 </script>
 <script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
