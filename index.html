@@ -403,8 +403,7 @@
     const dropboxKey = 'photo_pro_dropbox';
     
     // ========== Google Drive API 설정 ==========
-    const GOOGLE_CLIENT_ID = '1020242242798-ai14uvgmjsvmvbqp4fpb2unb6hjnqrr8.apps.googleusercontent.com
-';
+    const GOOGLE_CLIENT_ID = '1020242242798-ai14uvgmjsvmvbqp4fpb2unb6hjnqrr8.apps.googleusercontent.com';
     const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file';
     
     // ========== Dropbox API 설정 ==========
@@ -465,56 +464,96 @@
         });
     }
 
-    // ========== Dropbox OAuth (PKCE 방식) ==========
+    // ========== Dropbox OAuth (PKCE 방식 - iOS 호환) ==========
     
-    // PKCE용 랜덤 문자열 생성
+    // PKCE용 랜덤 문자열 생성 (iOS Safari 호환)
     function generateRandomString(length) {
-        const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-        const values = crypto.getRandomValues(new Uint8Array(length));
-        return values.reduce((acc, x) => acc + possible[x % possible.length], "");
+        const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+        let text = '';
+        
+        // crypto.getRandomValues 안전하게 사용
+        if (window.crypto && window.crypto.getRandomValues) {
+            const array = new Uint8Array(length);
+            window.crypto.getRandomValues(array);
+            for (let i = 0; i < length; i++) {
+                text += possible.charAt(array[i] % possible.length);
+            }
+        } else {
+            // fallback for older browsers
+            for (let i = 0; i < length; i++) {
+                text += possible.charAt(Math.floor(Math.random() * possible.length));
+            }
+        }
+        return text;
     }
     
-    // SHA-256 해시 생성
+    // SHA-256 해시 생성 (iOS Safari 호환)
     async function sha256(plain) {
         const encoder = new TextEncoder();
         const data = encoder.encode(plain);
-        return window.crypto.subtle.digest('SHA-256', data);
+        
+        // SubtleCrypto 사용 가능 여부 확인
+        if (window.crypto && window.crypto.subtle && window.crypto.subtle.digest) {
+            return await window.crypto.subtle.digest('SHA-256', data);
+        } else {
+            // Fallback: SHA-256 없이 code_verifier를 그대로 challenge로 사용 (plain method)
+            // 보안은 약간 떨어지지만 작동은 됨
+            throw new Error('SHA-256 not supported');
+        }
     }
     
     // Base64 URL 인코딩
-    function base64urlencode(a) {
-        let str = "";
-        const bytes = new Uint8Array(a);
-        const len = bytes.byteLength;
-        for (let i = 0; i < len; i++) {
-            str += String.fromCharCode(bytes[i]);
+    function base64urlencode(arrayBuffer) {
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
         }
-        return btoa(str)
+        return btoa(binary)
             .replace(/\+/g, "-")
             .replace(/\//g, "_")
             .replace(/=+$/, "");
     }
     
     async function connectDropbox() {
-        // PKCE code verifier 생성
-        const codeVerifier = generateRandomString(128);
-        sessionStorage.setItem('dropbox_code_verifier', codeVerifier);
-        
-        // Code challenge 생성
-        const hashed = await sha256(codeVerifier);
-        const codeChallenge = base64urlencode(hashed);
-        
-        // 인증 URL 생성
-        const authUrl = `https://www.dropbox.com/oauth2/authorize?` +
-            `client_id=${DROPBOX_CLIENT_ID}&` +
-            `response_type=code&` +
-            `redirect_uri=${encodeURIComponent(DROPBOX_REDIRECT_URI)}&` +
-            `code_challenge=${codeChallenge}&` +
-            `code_challenge_method=S256&` +
-            `token_access_type=offline`;
-        
-        sessionStorage.setItem('dropbox_auth_pending', 'true');
-        window.location.href = authUrl;
+        try {
+            // PKCE code verifier 생성
+            const codeVerifier = generateRandomString(128);
+            sessionStorage.setItem('dropbox_code_verifier', codeVerifier);
+            
+            let authUrl;
+            
+            // Code challenge 생성 시도
+            try {
+                const hashed = await sha256(codeVerifier);
+                const codeChallenge = base64urlencode(hashed);
+                
+                // S256 방식으로 인증 URL 생성
+                authUrl = `https://www.dropbox.com/oauth2/authorize?` +
+                    `client_id=${DROPBOX_CLIENT_ID}&` +
+                    `response_type=code&` +
+                    `redirect_uri=${encodeURIComponent(DROPBOX_REDIRECT_URI)}&` +
+                    `code_challenge=${codeChallenge}&` +
+                    `code_challenge_method=S256&` +
+                    `token_access_type=offline`;
+            } catch (e) {
+                // SHA-256 실패시 plain 방식 사용
+                console.log('Using plain PKCE method');
+                authUrl = `https://www.dropbox.com/oauth2/authorize?` +
+                    `client_id=${DROPBOX_CLIENT_ID}&` +
+                    `response_type=code&` +
+                    `redirect_uri=${encodeURIComponent(DROPBOX_REDIRECT_URI)}&` +
+                    `code_challenge=${codeVerifier}&` +
+                    `code_challenge_method=plain&` +
+                    `token_access_type=offline`;
+            }
+            
+            sessionStorage.setItem('dropbox_auth_pending', 'true');
+            window.location.href = authUrl;
+        } catch (error) {
+            console.error('Dropbox 연결 시작 실패:', error);
+            alert('Dropbox 연결을 시작할 수 없습니다: ' + error.message);
+        }
     }
 
     async function handleDropboxCallback() {
@@ -549,6 +588,11 @@
                     })
                 });
                 
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Token exchange failed: ${errorText}`);
+                }
+                
                 const data = await response.json();
                 
                 if (data.access_token) {
@@ -562,6 +606,11 @@
                             'Authorization': `Bearer ${dropboxAccessToken}`
                         }
                     });
+                    
+                    if (!accountInfo.ok) {
+                        throw new Error('Failed to get account info');
+                    }
+                    
                     const accountData = await accountInfo.json();
                     
                     // 저장
@@ -582,11 +631,11 @@
                     await updateDropboxStatus();
                     alert('Dropbox에 연결되었습니다!');
                 } else {
-                    throw new Error(data.error_description || 'Token exchange failed');
+                    throw new Error(data.error_description || 'No access token received');
                 }
             } catch (error) {
                 console.error('Dropbox 인증 실패:', error);
-                alert('Dropbox 연결에 실패했습니다: ' + error.message);
+                alert('Dropbox 연결에 실패했습니다.\n' + error.message);
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
         }
