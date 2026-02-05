@@ -704,15 +704,153 @@
             alert('먼저 사진을 처리해주세요.');
             return;
         }
-        alert('Google Drive 기능은 현재 개발 중입니다.');
+        
+        if (!googleAccessToken) {
+            alert('Google Drive에 연결되어 있지 않습니다.\n설정에서 연결해주세요.');
+            return;
+        }
+        
+        // 실제 업로드 로직은 이미지 처리 후 자동으로 실행됨
+        alert('업로드 기능은 사진 처리 완료 후 자동으로 실행됩니다.');
     }
     
     function connectGoogleDrive() {
-        alert('Google Drive 연동 기능은 현재 개발 중입니다.\n\n다음 업데이트에서 사용 가능할 예정입니다.');
+        if (!gapiInited || !googleTokenClient) {
+            alert('Google API가 아직 로드되지 않았습니다. 잠시 후 다시 시도해주세요.');
+            return;
+        }
+        googleTokenClient.requestAccessToken({ prompt: 'consent' });
     }
     
-    function disconnectGoogleDrive() {
-        alert('Google Drive 연결 해제 기능은 현재 개발 중입니다.');
+    async function disconnectGoogleDrive() {
+        if (confirm('Google Drive 연결을 해제하시겠습니까?')) {
+            if (googleAccessToken) {
+                google.accounts.oauth2.revoke(googleAccessToken);
+            }
+            localStorage.removeItem(driveKey);
+            googleAccessToken = null;
+            await updateDriveStatus();
+            alert('연결이 해제되었습니다.');
+        }
+    }
+    
+    async function saveGoogleToken(response) {
+        const driveData = {
+            access_token: response.access_token,
+            expires_at: Date.now() + (response.expires_in * 1000),
+            autoUpload: document.getElementById('driveAutoUpload').checked,
+            manualUpload: document.getElementById('driveManualUpload').checked
+        };
+        
+        try {
+            const userInfo = await gapi.client.request({
+                path: 'https://www.googleapis.com/oauth2/v2/userinfo'
+            });
+            driveData.email = userInfo.result.email;
+        } catch (err) {
+            console.error('사용자 정보 가져오기 실패:', err);
+        }
+        
+        localStorage.setItem(driveKey, JSON.stringify(driveData));
+    }
+    
+    async function loadGoogleToken() {
+        const saved = localStorage.getItem(driveKey);
+        if (!saved) return false;
+        
+        const driveData = JSON.parse(saved);
+        
+        if (Date.now() >= (driveData.expires_at - 300000)) {
+            return false;
+        }
+        
+        googleAccessToken = driveData.access_token;
+        gapi.client.setToken({ access_token: googleAccessToken });
+        
+        document.getElementById('driveAutoUpload').checked = driveData.autoUpload || false;
+        document.getElementById('driveManualUpload').checked = driveData.manualUpload || false;
+        
+        return true;
+    }
+    
+    async function checkDriveConnection() {
+        const connected = await loadGoogleToken();
+        await updateDriveStatus();
+    }
+    
+    async function updateDriveStatus() {
+        const status = document.getElementById('driveStatus');
+        const indicator = document.getElementById('driveIndicator');
+        const email = document.getElementById('driveEmail');
+        const connectBtn = document.getElementById('driveConnectBtn');
+        const disconnectBtn = document.getElementById('driveDisconnectBtn');
+        
+        const saved = localStorage.getItem(driveKey);
+        
+        if (googleAccessToken && saved) {
+            const driveData = JSON.parse(saved);
+            status.classList.add('connected');
+            indicator.classList.add('connected');
+            email.textContent = driveData.email || '연결됨';
+            connectBtn.style.display = 'none';
+            disconnectBtn.style.display = 'block';
+        } else {
+            status.classList.remove('connected');
+            indicator.classList.remove('connected');
+            email.textContent = '연결되지 않음';
+            connectBtn.style.display = 'block';
+            disconnectBtn.style.display = 'none';
+        }
+    }
+    
+    async function ensureValidGoogleToken() {
+        const saved = localStorage.getItem(driveKey);
+        if (!saved) return false;
+        
+        const driveData = JSON.parse(saved);
+        
+        if (Date.now() >= (driveData.expires_at - 300000)) {
+            alert('Google Drive 연결이 만료되었습니다.\n설정에서 다시 연결해주세요.');
+            googleAccessToken = null;
+            return false;
+        }
+        
+        return true;
+    }
+    
+    async function uploadToGoogleDrive(blob, fileName) {
+        if (!await ensureValidGoogleToken()) {
+            throw new Error('Google Drive 연결이 만료되었습니다.');
+        }
+        
+        if (!googleAccessToken) {
+            throw new Error('Google Drive에 연결되어 있지 않습니다.');
+        }
+
+        const metadata = {
+            name: fileName,
+            mimeType: 'application/zip'
+        };
+
+        const form = new FormData();
+        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+        form.append('file', blob);
+
+        const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${googleAccessToken}`
+            },
+            body: form
+        });
+
+        if (!response.ok) {
+            throw new Error('업로드 실패');
+        }
+
+        const result = await response.json();
+        googleLastFolderId = result.id;
+        return result;
     }
     
     function toggleDriveSettings() {
