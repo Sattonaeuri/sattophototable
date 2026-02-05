@@ -3,15 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>현장 사진 Pro (HEIC 패치)</title>
-    <!-- HEIC 변환 라이브러리 추가 -->
+    <title>현장 사진 Pro (날짜 완벽 동기화)</title>
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/piexifjs/1.0.6/piexif.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
     <script src="https://apis.google.com/js/api.js"></script>
     <style>
-        /* 기존 스타일 유지 */
         :root {
             --bg-primary: #000000;
             --bg-secondary: #1c1c1e;
@@ -34,238 +32,40 @@
             --shadow: rgba(0,0,0,0.1);
         }
         
-        body { 
-            font-family: -apple-system, sans-serif; 
-            padding: 20px; 
-            background: var(--bg-primary); 
-            color: var(--text-primary);
-            transition: background-color 0.3s, color 0.3s;
-            margin: 0;
-        }
-        
-        /* 헤더 */
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            padding: 0 5px;
-        }
-        .header h1 {
-            margin: 0;
-            font-size: 24px;
-            color: var(--text-primary);
-        }
-        .settings-btn {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            font-size: 20px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--text-primary);
-        }
-        .back-btn {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 8px 16px;
-            font-size: 16px;
-            cursor: pointer;
-            color: var(--text-primary);
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-        
-        .card { 
-            background: var(--bg-secondary); 
-            padding: 15px; 
-            border-radius: 12px; 
-            margin-bottom: 15px; 
-            box-shadow: 0 4px 12px var(--shadow); 
-            box-sizing: border-box;
-            border: 1px solid var(--border-color);
-        }
-        h3 { 
-            margin: 0 0 12px 0; 
-            font-size: 16px; 
-            border-bottom: 1px solid var(--border-color); 
-            padding-bottom: 8px; 
-            color: var(--text-secondary); 
-        }
-        
-        /* 레이아웃 최적화 */
+        body { font-family: -apple-system, sans-serif; padding: 20px; background: var(--bg-primary); color: var(--text-primary); transition: background-color 0.3s, color 0.3s; margin: 0; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 0 5px; }
+        .header h1 { margin: 0; font-size: 24px; color: var(--text-primary); }
+        .settings-btn { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 50%; width: 40px; height: 40px; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-primary); }
+        .back-btn { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 8px 16px; font-size: 16px; cursor: pointer; color: var(--text-primary); display: flex; align-items: center; gap: 5px; }
+        .card { background: var(--bg-secondary); padding: 15px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 4px 12px var(--shadow); box-sizing: border-box; border: 1px solid var(--border-color); }
+        h3 { margin: 0 0 12px 0; font-size: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; color: var(--text-secondary); }
         .row { display: flex; gap: 10px; margin-bottom: 8px; align-items: stretch; width: 100%; }
-        .col-key { 
-            width: 65px; 
-            flex: none !important; 
-            font-weight: bold; 
-            background: var(--bg-tertiary); 
-            color: var(--text-tertiary); 
-            border: 1px solid var(--border-color); 
-            padding: 12px 5px; 
-            border-radius: 8px; 
-            text-align: center; 
-            font-size: 13px; 
-            box-sizing: border-box; 
-        }
-        input, select { 
-            flex: 1; 
-            min-width: 0; 
-            padding: 12px; 
-            border: 1px solid var(--border-color); 
-            border-radius: 8px; 
-            font-size: 15px; 
-            background: var(--bg-tertiary); 
-            color: var(--text-primary); 
-            box-sizing: border-box; 
-        }
-        
-        /* 입력 상자 내부 삭제 버튼 */
+        .col-key { width: 65px; flex: none !important; font-weight: bold; background: var(--bg-tertiary); color: var(--text-tertiary); border: 1px solid var(--border-color); padding: 12px 5px; border-radius: 8px; text-align: center; font-size: 13px; box-sizing: border-box; }
+        input, select { flex: 1; min-width: 0; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 15px; background: var(--bg-tertiary); color: var(--text-primary); box-sizing: border-box; }
         .input-wrapper { position: relative; flex: 1; display: flex; align-items: center; min-width: 0; }
         .input-wrapper input { flex: 1; min-width: 0; }
         .input-with-clear { padding-right: 40px !important; }
-        .clear-btn { 
-            position: absolute; 
-            right: 8px; 
-            background: #8e8e93; 
-            border: none; 
-            border-radius: 50%; 
-            width: 24px; 
-            height: 24px; 
-            color: white; 
-            font-size: 14px; 
-            cursor: pointer; 
-            display: none;
-            align-items: center;
-            justify-content: center;
-            line-height: 1;
-        }
-        .clear-btn:active { background: #636366; }
-        
-        /* 날짜 입력 */
-        input[type="date"] {
-            color-scheme: light dark;
-            -webkit-appearance: none;
-        }
-        body.light-mode input[type="date"]::-webkit-calendar-picker-indicator {
-            filter: invert(0);
-        }
-        body:not(.light-mode) input[type="date"]::-webkit-calendar-picker-indicator {
-            filter: invert(1);
-        }
-        
+        .clear-btn { position: absolute; right: 8px; background: #8e8e93; border: none; border-radius: 50%; width: 24px; height: 24px; color: white; font-size: 14px; cursor: pointer; display: none; align-items: center; justify-content: center; line-height: 1; }
+        input[type="date"] { color-scheme: light dark; -webkit-appearance: none; }
+        body.light-mode input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0); }
+        body:not(.light-mode) input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
         button { padding: 15px; border-radius: 10px; border: none; font-size: 16px; font-weight: bold; cursor: pointer; }
         .btn-blue { background: #0a84ff; color: white; width: 100%; margin-top: 10px; }
         .btn-green { background: #30d158; color: white; width: 100%; margin-top: 10px; }
         .btn-red { background: #ff453a; color: white; width: 70px; font-size: 13px; flex-shrink: 0; }
         .btn-gray { background: #8e8e93; color: white; width: 70px; font-size: 13px; flex-shrink: 0; }
         .btn-orange { background: #ff9f0a; color: white; width: 100%; margin-top: 10px; }
-        .btn-purple { background: #bf5af2; color: white; width: 100%; margin-top: 10px; }
-        
         #status { text-align: center; margin-top: 15px; font-weight: 600; color: #0a84ff; word-break: keep-all;}
-        #openFilesBtn, #openDriveBtn { display: none; }
-        
-        /* 테마 토글 스위치 */
-        .toggle-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 15px;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            margin-bottom: 15px;
-        }
-        .toggle-label {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 51px;
-            height: 31px;
-        }
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #8e8e93;
-            transition: .3s;
-            border-radius: 31px;
-        }
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 27px;
-            width: 27px;
-            left: 2px;
-            bottom: 2px;
-            background-color: white;
-            transition: .3s;
-            border-radius: 50%;
-        }
-        input:checked + .slider {
-            background-color: #0a84ff;
-        }
-        input:checked + .slider:before {
-            transform: translateX(20px);
-        }
-        
-        /* 화면 전환 */
+        #openFilesBtn { display: none; }
+        .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 15px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 10px; margin-bottom: 15px; }
+        .switch { position: relative; display: inline-block; width: 51px; height: 31px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #8e8e93; transition: .3s; border-radius: 31px; }
+        .slider:before { position: absolute; content: ""; height: 27px; width: 27px; left: 2px; bottom: 2px; background-color: white; transition: .3s; border-radius: 50%; }
+        input:checked + .slider { background-color: #0a84ff; }
+        input:checked + .slider:before { transform: translateX(20px); }
         .screen { display: none; }
         .screen.active { display: block; }
-        
-        .setting-description {
-            text-align: center;
-            font-size: 13px;
-            color: var(--text-tertiary);
-            margin-top: 10px;
-        }
-        
-        /* 클라우드 연결 상태 */
-        .cloud-status {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 12px;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            margin-bottom: 15px;
-        }
-        .cloud-status.connected {
-            border-color: #30d158;
-        }
-        .status-indicator {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #8e8e93;
-        }
-        .status-indicator.connected {
-            background: #30d158;
-        }
-        .cloud-email {
-            flex: 1;
-            font-size: 14px;
-            color: var(--text-primary);
-        }
     </style>
 </head>
 <body>
@@ -300,54 +100,21 @@
         <input type="file" id="imageInput" multiple accept="image/jpeg,image/jpg,image/heic,image/heif" style="display: none;">
         <button class="btn-blue" onclick="document.getElementById('imageInput').click()">📸 사진 선택 & 작업 시작</button>
         <div id="status">대기 중...</div>
-        <button id="openFilesBtn" class="btn-green" onclick="openFilesApp()">📂 파일 앱 열기</button>
-        <button id="uploadToDriveBtn" class="btn-purple" onclick="manualUploadToDrive()" style="display: none;">☁️ Drive에 업로드</button>
-        <button id="openDriveBtn" class="btn-purple" onclick="openDriveFolder()" style="display: none;">📂 Drive에서 보기</button>
+        <button id="openFilesBtn" class="btn-green" onclick="openFilesApp()">📂 결과 확인</button>
     </div>
 
     <div class="card">
-        <h3>💾 템플릿 백업 & 복원</h3>
-        <button class="btn-blue" onclick="exportTemplates()">📤 템플릿 내보내기 (JSON)</button>
+        <h3>💾 백업 & 복원</h3>
+        <button class="btn-blue" onclick="exportTemplates()">📤 내보내기 (JSON)</button>
         <input type="file" id="importInput" accept="application/json" style="display: none;" onchange="importTemplates(event)">
-        <button class="btn-green" onclick="document.getElementById('importInput').click()">📥 템플릿 가져오기 (JSON)</button>
-    </div>
-    
-    <div style="text-align: center; padding: 20px 0; color: var(--text-tertiary); font-size: 13px;">
-        Made by Juneui
+        <button class="btn-green" onclick="document.getElementById('importInput').click()">📥 가져오기 (JSON)</button>
     </div>
 </div>
 
 <div id="settingsScreen" class="screen">
     <div class="header">
         <button class="back-btn" onclick="showMain()">← 뒤로가기</button>
-        <h1 style="margin-left: auto;">설정</h1>
-    </div>
-
-    <div class="card">
-        <h3>☁️ Google Drive 연동</h3>
-        <div class="cloud-status" id="driveStatus">
-            <div class="status-indicator" id="driveIndicator"></div>
-            <span class="cloud-email" id="driveEmail">연결되지 않음</span>
-        </div>
-        <button class="btn-blue" id="driveConnectBtn" onclick="connectGoogleDrive()">Google 계정 연결</button>
-        <button class="btn-red" id="driveDisconnectBtn" onclick="disconnectGoogleDrive()" style="display: none; width: 100%;">연결 해제</button>
-        
-        <div class="toggle-row" style="margin-top: 15px;">
-            <span class="toggle-label">Drive 자동 업로드</span>
-            <label class="switch">
-                <input type="checkbox" id="driveAutoUpload" onchange="toggleDriveSettings()">
-                <span class="slider"></span>
-            </label>
-        </div>
-        
-        <div class="toggle-row" style="margin-top: 15px;">
-            <span class="toggle-label">확인 후 업로드</span>
-            <label class="switch">
-                <input type="checkbox" id="driveManualUpload" onchange="toggleDriveSettings()">
-                <span class="slider"></span>
-            </label>
-        </div>
-        <div class="setting-description">⚠️ 1시간마다 재연결 필요</div>
+        <h1>설정</h1>
     </div>
 
     <div class="card">
@@ -359,57 +126,32 @@
                 <span class="slider"></span>
             </label>
         </div>
-        <div class="setting-description">밝은 화면을 원하시면 토글을 끄세요</div>
     </div>
 
     <div class="card">
         <h3>📏 표 크기 설정</h3>
         <div style="padding: 10px 0;">
             <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                <span style="color: var(--text-primary); font-size: 14px;">표 크기</span>
                 <span id="tableSizeValue" style="color: #0a84ff; font-weight: bold;">100%</span>
             </div>
-            <input type="range" id="tableSizeSlider" min="50" max="150" value="100" 
-                   style="width: 100%; height: 6px; border-radius: 3px; background: var(--bg-tertiary); 
-                          border: 1px solid var(--border-color); cursor: pointer;"
-                   oninput="updateTableSize(this.value)">
-            <div style="display: flex; justify-content: space-between; margin-top: 5px; font-size: 12px; color: var(--text-tertiary);">
-                <span>50%</span>
-                <span>100%</span>
-                <span>150%</span>
-            </div>
+            <input type="range" id="tableSizeSlider" min="50" max="150" value="100" oninput="updateTableSize(this.value)" style="width: 100%;">
         </div>
-        <div class="setting-description">표의 전체 크기를 조절합니다</div>
     </div>
 
     <div class="card">
         <h3>🔄 앱 업데이트</h3>
         <button class="btn-orange" onclick="updateApp()">🔄 최신 버전으로 업데이트</button>
-        <div class="setting-description">캐시를 삭제하고 최신 버전을 불러옵니다</div>
     </div>
 </div>
 
 <script>
-    // ========== 설정 키 ==========
     const storageKey = 'photo_pro_v8_final';
     const themeKey = 'photo_pro_theme';
-    const driveKey = 'photo_pro_drive';
     const tableSizeKey = 'photo_pro_table_size';
-    
-    // ========== Google Drive API 설정 ==========
-    const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
-    const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file';
-    
-    // ========== 전역 변수 ==========
-    let gapiInited = false;
-    let googleTokenClient;
-    let googleAccessToken = null;
-    let googleLastFolderId = null;
     
     let currentZipBlob = null;
     let currentZipFileName = null;
     let tableSize = 100; 
-    
     const statusText = document.getElementById('status');
     const openFilesBtn = document.getElementById('openFilesBtn');
     const today = new Date();
@@ -421,13 +163,12 @@
         {k: "일자", v: dateStr}, {k: "채취구분", v: ""}, {k: "조사자", v: ""}
     ];
 
-    // ========== 1. UI 및 템플릿 제어 함수 (복구됨) ==========
+    // UI 제어
     function showSettings() { document.getElementById('mainScreen').classList.remove('active'); document.getElementById('settingsScreen').classList.add('active'); }
     function showMain() { document.getElementById('settingsScreen').classList.remove('active'); document.getElementById('mainScreen').classList.add('active'); }
     
     function renderFields() { 
         const c = document.getElementById('tableFields'); 
-        if (!c) return;
         c.innerHTML = ''; 
         currentData.forEach((item, i) => { 
             const row = document.createElement('div'); 
@@ -446,81 +187,42 @@
     function clearFieldInput(i) { currentData[i].v = ''; renderFields(); }
     function clearTemplateName() { document.getElementById('newTemplateName').value = ''; toggleClearBtn(); }
     function toggleClearBtn() { const input = document.getElementById('newTemplateName'); document.getElementById('clearNameBtn').style.display = input.value ? 'flex' : 'none'; }
-
     function updateDateField(i, v) { if (v) { const [y, m, d] = v.split('-'); currentData[i].v = `${y}년 ${m}월 ${d}일`; } }
     function koreanToISO(k) { const m = k.match(/(\d{4})년 (\d{2})월 (\d{2})일/); return m ? `${m[1]}-${m[2]}-${m[3]}` : ''; }
     function getShortDate(s) { const m = s.match(/(\d{4})년 (\d{2})월 (\d{2})일/); return m ? (m[1].substring(2) + m[2] + m[3]) : "000000"; }
 
-    // 템플릿 저장/로드/삭제/백업
+    // 템플릿 관리
     function updateTmplList() { const s = document.getElementById('templateList'); const t = JSON.parse(localStorage.getItem(storageKey) || '{}'); s.innerHTML = '<option value="">템플릿 선택</option>'; for(let n in t) s.innerHTML += `<option value="${n}">${n}</option>`; }
     function saveTemplate() { 
         const name = document.getElementById('newTemplateName').value; 
-        if(!name) return alert("템플릿 이름을 입력해주세요."); 
+        if(!name) return alert("이름을 입력하세요."); 
         let t = JSON.parse(localStorage.getItem(storageKey) || '{}'); 
         t[name] = JSON.parse(JSON.stringify(currentData)); 
         localStorage.setItem(storageKey, JSON.stringify(t)); 
-        currentTemplateName = name;
-        updateTmplList(); 
-        document.getElementById('templateList').value = name;
-        alert("성공적으로 저장되었습니다."); 
+        updateTmplList(); alert("저장되었습니다."); 
     }
     function loadTemplate() { 
         const n = document.getElementById('templateList').value; 
-        if(!n) { currentTemplateName = ""; document.getElementById('newTemplateName').value = ""; toggleClearBtn(); return; }
+        if(!n) return;
         const t = JSON.parse(localStorage.getItem(storageKey) || '{}'); 
-        if(t[n]) { 
-            currentData = t[n]; 
-            currentData[2].v = dateStr; // 날짜는 오늘로 갱신
-            currentTemplateName = n;
-            document.getElementById('newTemplateName').value = n;
-            toggleClearBtn();
-            renderFields(); 
-        } 
+        if(t[n]) { currentData = t[n]; currentData[2].v = dateStr; currentTemplateName = n; document.getElementById('newTemplateName').value = n; renderFields(); } 
     }
     function deleteTemplate() { 
         const n = document.getElementById('templateList').value; 
-        if(!n || !confirm("이 템플릿을 삭제하시겠습니까?")) return; 
+        if(!n || !confirm("삭제할까요?")) return; 
         let t = JSON.parse(localStorage.getItem(storageKey) || '{}'); 
-        delete t[n]; 
-        localStorage.setItem(storageKey, JSON.stringify(t)); 
-        updateTmplList(); 
-        currentTemplateName = "";
-        document.getElementById('newTemplateName').value = "";
+        delete t[n]; localStorage.setItem(storageKey, JSON.stringify(t)); updateTmplList(); 
     }
-    function exportTemplates() { 
-        const t = localStorage.getItem(storageKey); 
-        if (!t || t === '{}') return alert('내보낼 템플릿이 없습니다.'); 
-        const blob = new Blob([t], {type: "application/json"});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = "photo_pro_templates.json"; a.click(); 
-    }
-    function importTemplates(e) { 
-        const file = e.target.files[0]; if (!file) return; 
-        const reader = new FileReader(); 
-        reader.onload = function(e) { 
-            try { 
-                const d = JSON.parse(e.target.result); 
-                const ex = JSON.parse(localStorage.getItem(storageKey) || '{}'); 
-                localStorage.setItem(storageKey, JSON.stringify({...ex, ...d})); 
-                updateTmplList(); alert('가져오기 완료!'); 
-            } catch (err) { alert('파일이 올바르지 않습니다.'); } 
-        }; reader.readAsText(file); 
-    }
+    function exportTemplates() { const t = localStorage.getItem(storageKey); if (!t) return; const blob = new Blob([t], {type: "application/json"}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = "templates.json"; a.click(); }
+    function importTemplates(e) { const file = e.target.files[0]; const r = new FileReader(); r.onload = (e) => { const d = JSON.parse(e.target.result); const ex = JSON.parse(localStorage.getItem(storageKey) || '{}'); localStorage.setItem(storageKey, JSON.stringify({...ex, ...d})); updateTmplList(); alert('완료!'); }; r.readAsText(file); }
 
-    // ========== 2. 이미지 및 메타데이터 처리 (날짜 동기화 포함) ==========
+    // 이미지 및 EXIF 처리
     function formatDateForExif(date) {
-        const d = (typeof date === 'string' || typeof date === 'number') ? new Date(date) : date;
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        const h = String(d.getHours()).padStart(2, '0');
-        const min = String(d.getMinutes()).padStart(2, '0');
-        const s = String(d.getSeconds()).padStart(2, '0');
+        const d = (date instanceof Date) ? date : new Date(date);
+        const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+        const h = String(d.getHours()).padStart(2, '0'), min = String(d.getMinutes()).padStart(2, '0'), s = String(d.getSeconds()).padStart(2, '0');
         return `${y}:${m}:${day} ${h}:${min}:${s}`;
     }
-
-    function toRational(n) { const t = 1.0E-6; let num = 1, den = 1; while (Math.abs(n - Math.round(n)) > t && den < 100000) { n *= 10; den *= 10; } return [Math.round(n), den]; }
-    function degToDmsRational(d) { const abs = Math.abs(d); const deg = Math.floor(abs); const minF = (abs - deg) * 60; const min = Math.floor(minF); const sec = Math.round((minF - min) * 60 * 10000); return [[deg, 1], [min, 1], [sec, 10000]]; }
 
     async function getExifDateTime(file) {
         try {
@@ -528,6 +230,8 @@
             return (metadata && (metadata.DateTimeOriginal || metadata.CreateDate)) ? new Date(metadata.DateTimeOriginal || metadata.CreateDate) : new Date(0);
         } catch (err) { return new Date(0); }
     }
+
+    function degToDmsRational(d) { const abs = Math.abs(d); const deg = Math.floor(abs); const minF = (abs - deg) * 60; const min = Math.floor(minF); const sec = Math.round((minF - min) * 60 * 10000); return [[deg, 1], [min, 1], [sec, 10000]]; }
 
     async function processImage(file) {
         let extractedExif = null;
@@ -537,9 +241,8 @@
             const reader = new FileReader();
             reader.readAsDataURL(file);
             reader.onload = (e) => {
-                const originalDataUrl = e.target.result;
                 const img = new Image();
-                img.src = originalDataUrl;
+                img.src = e.target.result;
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
@@ -557,7 +260,7 @@
                     const padding = 40 * scale; 
                     const tableW = keyWidth + maxVWidth + (padding * 4);
                     const tableH = rowH * 5;
-                    const x = 0; const y = canvas.height - tableH;
+                    const x = 0, y = canvas.height - tableH;
 
                     ctx.fillStyle = "white"; ctx.fillRect(x, y, tableW, tableH);
                     ctx.strokeStyle = "black"; ctx.lineWidth = canvas.width * 0.0015; ctx.fillStyle = "black";
@@ -574,18 +277,17 @@
                         const reader2 = new FileReader();
                         reader2.readAsDataURL(blob);
                         reader2.onload = (e2) => {
-                            const newDataUrl = e2.target.result;
                             try {
-                                const zeroth = {}; const exif = {}; const gps = {};
+                                const zeroth = {}, exif = {}, gps = {};
                                 if (extractedExif) {
-                                    zeroth[piexif.ImageIFD.Make] = String(extractedExif.Make || "Apple");
-                                    zeroth[piexif.ImageIFD.Model] = String(extractedExif.Model || "iPhone");
+                                    zeroth[piexif.ImageIFD.Make] = String(extractedExif.Make || "Camera");
+                                    zeroth[piexif.ImageIFD.Model] = String(extractedExif.Model || "Phone");
                                     let targetDate = extractedExif.DateTimeOriginal || extractedExif.CreateDate || new Date();
-                                    let dateStr = formatDateForExif(targetDate);
+                                    let exifDateStr = formatDateForExif(targetDate);
                                     
-                                    exif[piexif.ExifIFD.DateTimeOriginal] = dateStr;
-                                    exif[piexif.ExifIFD.DateTimeDigitized] = dateStr;
-                                    zeroth[piexif.ImageIFD.DateTime] = dateStr; // 수정한 날짜 동기화
+                                    exif[piexif.ExifIFD.DateTimeOriginal] = exifDateStr;
+                                    exif[piexif.ExifIFD.DateTimeDigitized] = exifDateStr;
+                                    zeroth[piexif.ImageIFD.DateTime] = exifDateStr; // 내부 메타데이터 수정한 날짜
 
                                     if (extractedExif.latitude && extractedExif.longitude) {
                                         gps[piexif.GPSIFD.GPSVersionID] = [2, 2, 0, 0];
@@ -596,8 +298,7 @@
                                     }
                                 }
                                 const exifObj = { "0th": zeroth, "Exif": exif, "GPS": gps };
-                                const exifStr = piexif.dump(exifObj);
-                                const finalDataUrl = piexif.insert(exifStr, newDataUrl);
+                                const finalDataUrl = piexif.insert(piexif.dump(exifObj), e2.target.result);
                                 fetch(finalDataUrl).then(r => r.blob()).then(res);
                             } catch (err) { res(blob); }
                         };
@@ -607,41 +308,61 @@
         });
     }
 
-    // ========== 3. 기타 설정 및 이벤트 리스너 ==========
+    // 메인 작업 핸들러
     document.getElementById('imageInput').addEventListener('change', async (e) => {
         const files = Array.from(e.target.files);
         if (!files.length) return;
-        statusText.innerText = '처리 중...';
-        const filesWithTime = await Promise.all(files.map(async (file) => ({ file: file, time: await getExifDateTime(file) })));
+        
+        statusText.innerText = '사진 분석 및 정렬 중...';
+        
+        // 1. 날짜 추출 및 촬영 시간순 정렬
+        const filesWithTime = await Promise.all(files.map(async (file) => {
+            const time = await getExifDateTime(file);
+            return { file, time };
+        }));
         filesWithTime.sort((a, b) => a.time - b.time);
-        const sortedFiles = filesWithTime.map(item => item.file);
         
         const zip = new JSZip();
         const baseTitle = currentTemplateName || currentData[0].v || "현장사진";
+        const photoBaseName = currentData[1].v || "사진"; // 시료번호를 파일명으로 사용
         const datePart = getShortDate(currentData[2].v);
-        for (let i = 0; i < sortedFiles.length; i++) {
-    statusText.innerText = `${i+1}/${sortedFiles.length} 처리 중...`;
-    const blob = await processImage(sortedFiles[i]);
-    
-    // [보완] 압축 파일 내의 파일 날짜를 촬영 날짜(filesWithTime[i].time)로 강제 지정
-    zip.file(`${photoBaseName} (${i+1}).jpg`, blob, {
-        date: sortedFiles[i].time > new Date(0) ? sortedFiles[i].time : new Date()
-    });
-}
+        
+        // 2. 이미지 처리 루프
+        for (let i = 0; i < filesWithTime.length; i++) {
+            statusText.innerText = `${i+1}/${filesWithTime.length}개 변환 중...`;
+            
+            const targetData = filesWithTime[i];
+            const blob = await processImage(targetData.file);
+            
+            // [핵심] ZIP 내부의 파일 수정 날짜를 촬영 시각으로 강제 고정
+            const fileDate = (targetData.time && targetData.time.getTime() > 0) ? targetData.time : new Date();
+            
+            zip.file(`${photoBaseName} (${i+1}).jpg`, blob, {
+                date: fileDate
+            });
+        }
+        
+        statusText.innerText = '압축 파일 생성 중...';
         const content = await zip.generateAsync({type: "blob"});
-        currentZipBlob = content; currentZipFileName = `${baseTitle} ${datePart}.zip`;
-        const link = document.createElement('a'); link.href = URL.createObjectURL(content); link.download = currentZipFileName; link.click();
-        statusText.innerText = "완료!"; openFilesBtn.style.display = 'block';
+        currentZipBlob = content;
+        currentZipFileName = `${baseTitle}_${datePart}.zip`;
+        
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(content);
+        link.download = currentZipFileName;
+        link.click();
+        
+        statusText.innerText = "모든 작업 완료!";
+        openFilesBtn.style.display = 'block';
     });
 
     function updateTableSize(v) { tableSize = parseInt(v); document.getElementById('tableSizeValue').textContent = v + '%'; localStorage.setItem(tableSizeKey, tableSize); }
-    function loadTableSize() { const s = localStorage.getItem(tableSizeKey); if (s) { tableSize = parseInt(s); if(document.getElementById('tableSizeSlider')) document.getElementById('tableSizeSlider').value = tableSize; document.getElementById('tableSizeValue').textContent = tableSize + '%'; } }
-    function loadTheme() { if ((localStorage.getItem(themeKey) || 'dark') === 'light') { document.body.classList.add('light-mode'); document.getElementById('themeToggle').checked = false; } }
+    function loadTableSize() { const s = localStorage.getItem(tableSizeKey); if (s) { tableSize = parseInt(s); document.getElementById('tableSizeSlider').value = tableSize; document.getElementById('tableSizeValue').textContent = tableSize + '%'; } }
+    function loadTheme() { if ((localStorage.getItem(themeKey) || 'dark') === 'light') { document.body.classList.add('light-mode'); document.getElementById('themeToggle').checked = false; } else { document.getElementById('themeToggle').checked = true; } }
     function toggleTheme() { if (document.getElementById('themeToggle').checked) { document.body.classList.remove('light-mode'); localStorage.setItem(themeKey, 'dark'); } else { document.body.classList.add('light-mode'); localStorage.setItem(themeKey, 'light'); } }
     function updateApp() { if (confirm('업데이트하시겠습니까?')) window.location.reload(true); }
 
-    window.onload = async () => { renderFields(); updateTmplList(); loadTheme(); loadTableSize(); };
+    window.onload = () => { renderFields(); updateTmplList(); loadTheme(); loadTableSize(); };
 </script>
-<script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
 </body>
 </html>
