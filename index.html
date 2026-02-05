@@ -714,11 +714,51 @@
     }
     
     function connectGoogleDrive() {
-        if (!gapiInited || !googleTokenClient) {
-            alert('Google API가 아직 로드되지 않았습니다. 잠시 후 다시 시도해주세요.');
+        console.log('=== Google Drive 연결 시도 ===');
+        console.log('Client ID:', GOOGLE_CLIENT_ID);
+        console.log('gapiInited:', gapiInited);
+        console.log('googleTokenClient:', googleTokenClient);
+        console.log('typeof gapi:', typeof gapi);
+        console.log('typeof google:', typeof google);
+        
+        // Client ID 확인
+        if (GOOGLE_CLIENT_ID === 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com') {
+            alert('❌ Google Client ID가 설정되지 않았습니다.\n\n코드에서 GOOGLE_CLIENT_ID를 실제 값으로 변경해주세요.');
             return;
         }
-        googleTokenClient.requestAccessToken({ prompt: 'consent' });
+        
+        // gapi 확인
+        if (typeof gapi === 'undefined') {
+            alert('❌ Google API 라이브러리가 로드되지 않았습니다.\n\n페이지를 새로고침해주세요.');
+            return;
+        }
+        
+        // google 확인
+        if (typeof google === 'undefined') {
+            alert('❌ Google Identity Services가 로드되지 않았습니다.\n\n페이지를 새로고침해주세요.');
+            return;
+        }
+        
+        // googleTokenClient 확인
+        if (!googleTokenClient) {
+            alert('❌ Google Token Client가 초기화되지 않았습니다.\n\n5초 후 다시 시도해주세요.');
+            return;
+        }
+        
+        // gapiInited 확인
+        if (!gapiInited) {
+            alert('❌ Google API가 아직 초기화 중입니다.\n\n5초 후 다시 시도해주세요.');
+            return;
+        }
+        
+        console.log('✅ 모든 체크 통과, OAuth 시작');
+        // OAuth 인증 시작
+        try {
+            googleTokenClient.requestAccessToken({ prompt: 'consent' });
+        } catch (error) {
+            console.error('OAuth 요청 실패:', error);
+            alert('인증 요청 중 오류가 발생했습니다: ' + error.message);
+        }
     }
     
     async function disconnectGoogleDrive() {
@@ -867,9 +907,45 @@
         }
     }
     
+    // ========== Google API 초기화 함수 ==========
+    function gapiLoaded() {
+        gapi.load('client', initializeGapiClient);
+    }
+
+    async function initializeGapiClient() {
+        try {
+            await gapi.client.init({
+                discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+            });
+            gapiInited = true;
+            console.log('✅ Google API 초기화 완료');
+        } catch (error) {
+            console.error('❌ Google API 초기화 실패:', error);
+        }
+    }
+    
     function gisLoaded() {
-        // Google Identity Services 로드 완료 (현재는 미구현)
-        console.log('Google Identity Services loaded');
+        try {
+            googleTokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: GOOGLE_CLIENT_ID,
+                scope: GOOGLE_SCOPES,
+                prompt: '',
+                callback: async (response) => {
+                    if (response.error !== undefined) {
+                        console.error('OAuth 오류:', response);
+                        alert('Google 인증에 실패했습니다: ' + response.error);
+                        return;
+                    }
+                    googleAccessToken = response.access_token;
+                    await saveGoogleToken(response);
+                    await updateDriveStatus();
+                    alert('Google Drive에 연결되었습니다!');
+                },
+            });
+            console.log('✅ Google Identity Services 초기화 완료');
+        } catch (error) {
+            console.error('❌ Google Identity Services 초기화 실패:', error);
+        }
     }
 
     // ========== 5. 기타 설정 함수 ==========
@@ -921,8 +997,17 @@
         loadTheme(); 
         loadTableSize(); 
         toggleClearBtn();
+        
+        // Google API 초기화
+        if (typeof gapi !== 'undefined') {
+            console.log('🔄 Google API 로드 시작...');
+            gapiLoaded();
+        } else {
+            console.warn('⚠️ gapi가 정의되지 않음');
+        }
     };
 </script>
 <script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+<script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
 </body>
 </html>
