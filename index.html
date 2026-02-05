@@ -620,10 +620,14 @@
         const baseTitle = currentTemplateName || currentData[0].v || "현장사진";
         const datePart = getShortDate(currentData[2].v);
         for (let i = 0; i < sortedFiles.length; i++) {
-            statusText.innerText = `${i+1}/${sortedFiles.length} 처리 중...`;
-            const blob = await processImage(sortedFiles[i]);
-            zip.file(`${baseTitle}_${i+1}.jpg`, blob);
-        }
+    statusText.innerText = `${i+1}/${sortedFiles.length} 처리 중...`;
+    const blob = await processImage(sortedFiles[i]);
+    
+    // [보완] 압축 파일 내의 파일 날짜를 촬영 날짜(filesWithTime[i].time)로 강제 지정
+    zip.file(`${photoBaseName} (${i+1}).jpg`, blob, {
+        date: sortedFiles[i].time > new Date(0) ? sortedFiles[i].time : new Date()
+    });
+}
         const content = await zip.generateAsync({type: "blob"});
         currentZipBlob = content; currentZipFileName = `${baseTitle} ${datePart}.zip`;
         const link = document.createElement('a'); link.href = URL.createObjectURL(content); link.download = currentZipFileName; link.click();
