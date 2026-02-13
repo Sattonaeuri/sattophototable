@@ -312,7 +312,7 @@
     </div>
     
     <div style="text-align: center; padding: 20px 0; color: var(--text-tertiary); font-size: 13px;">
-        제작자 Juneui
+        만든 이 Juneui
     </div>
 </div>
 
@@ -922,16 +922,16 @@
         }
     }
 
-    // Dropbox 업로드 (iOS Safari 최적화 - XMLHttpRequest 방식)
+    // Dropbox 업로드 (iOS Safari 전용 - FileReader + ArrayBuffer 방식)
     async function uploadToDropbox(blob, fileName) {
         if (!dropboxAccessToken) {
             throw new Error('Dropbox 연결 정보가 없습니다.');
         }
 
-        // 파일명에서 특수문자 제거
+        // 1. 파일명 안전하게 처리
         const safeFileName = fileName.replace(/[:*?"<>|]/g, ''); 
         
-        // Dropbox API 인자 (한글 등 유니코드 이스케이프)
+        // 2. 헤더 생성 (한글 깨짐 방지)
         const dropboxArg = JSON.stringify({
             path: '/' + safeFileName,
             mode: 'add',
@@ -939,28 +939,47 @@
             mute: false
         }).replace(/[\u007f-\uffff]/g, (c) => '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4));
 
+        // 3. [핵심] FileReader로 Blob을 ArrayBuffer로 변환 후 전송
+        // 이 과정이 아이폰의 I/O 차단 문제를 우회합니다.
         return new Promise((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', 'https://content.dropboxapi.com/2/files/upload');
-            xhr.setRequestHeader('Authorization', 'Bearer ' + dropboxAccessToken);
-            xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-            xhr.setRequestHeader('Dropbox-API-Arg', dropboxArg);
+            const reader = new FileReader();
+            
+            // 데이터 읽기 성공 시 실행
+            reader.onload = function() {
+                const arrayBuffer = reader.result;
+                const xhr = new XMLHttpRequest();
+                
+                xhr.open('POST', 'https://content.dropboxapi.com/2/files/upload');
+                xhr.setRequestHeader('Authorization', 'Bearer ' + dropboxAccessToken);
+                xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+                xhr.setRequestHeader('Dropbox-API-Arg', dropboxArg);
 
-            xhr.onload = () => {
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    const result = JSON.parse(xhr.responseText);
-                    dropboxLastPath = result.path_display;
-                    console.log('✅ Dropbox 업로드 성공:', result.path_display);
-                    resolve(result);
-                } else {
-                    reject(new Error(`업로드 실패 (${xhr.status}): ${xhr.responseText}`));
-                }
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        const result = JSON.parse(xhr.responseText);
+                        dropboxLastPath = result.path_display;
+                        console.log('✅ Dropbox 업로드 성공:', result.path_display);
+                        resolve(result);
+                    } else {
+                        reject(new Error(`업로드 실패 (${xhr.status}): ${xhr.responseText}`));
+                    }
+                };
+
+                xhr.onerror = () => {
+                    reject(new Error('네트워크 오류. (Wi-Fi/LTE 상태를 확인하세요)'));
+                };
+
+                // 변환된 ArrayBuffer 데이터를 전송
+                xhr.send(arrayBuffer);
             };
 
-            xhr.onerror = () => reject(new Error('네트워크 오류 또는 I/O 차단 발생'));
-            
-            // 아이폰 Safari의 I/O 오류 방지 - Blob을 즉시 전송
-            xhr.send(blob);
+            // 데이터 읽기 실패 시 실행
+            reader.onerror = function() {
+                reject(new Error('파일 읽기 실패 (I/O Error). 다시 시도해주세요.'));
+            };
+
+            // Blob 읽기 시작
+            reader.readAsArrayBuffer(blob);
         });
     }
 
@@ -1189,15 +1208,7 @@
         currentZipBlob = content;
         currentZipFileName = `${zipFileName}.zip`;
         
-        // 1. 로컬 다운로드 (항상)
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(content);
-        link.download = currentZipFileName;
-        link.click();
-        statusText.innerText = "로컬 저장 완료!";
-        openFilesBtn.style.display = 'block';
-        
-        // 2. 클라우드 업로드 (설정에 따라)
+        // 2. 클라우드 업로드 (설정에 따라) - 먼저 시작!
         const dropboxData = localStorage.getItem(dropboxKey);
         const driveData = localStorage.getItem(driveKey);
         
@@ -1207,44 +1218,60 @@
         const useDropbox = dropboxSettings && dropboxSettings.autoUpload && dropboxAccessToken;
         const useDrive = !useDropbox && driveSettings && driveSettings.autoUpload && googleAccessToken;
         
+        // 1. 클라우드 업로드 먼저 (비동기로 시작)
         if (useDropbox) {
             const isManual = dropboxSettings.manualUpload;
             
             if (isManual) {
-                statusText.innerText = "로컬 저장 완료! 확인 후 Dropbox에 업로드하세요.";
+                statusText.innerText = "압축 완료! 확인 후 Dropbox에 업로드하세요.";
                 document.getElementById('uploadToCloudBtn').style.display = 'block';
                 document.getElementById('uploadToCloudBtn').disabled = false;
             } else {
-                try {
-                    statusText.innerText = 'Dropbox에 업로드 중...';
-                    // XMLHttpRequest로 즉시 업로드 (토큰 체크 없이)
-                    await uploadToDropbox(content, currentZipFileName);
-                    statusText.innerText = '로컬 저장 & Dropbox 업로드 완료!';
-                    document.getElementById('openDropboxBtn').style.display = 'block';
-                } catch (error) {
-                    console.error('Dropbox 업로드 실패:', error);
-                    statusText.innerText = '로컬 저장 완료! (Dropbox 업로드 실패: ' + error.message + ')';
-                }
+                statusText.innerText = 'Dropbox에 업로드 중...';
+                // await 없이 비동기로 시작 (다운로드와 동시 진행)
+                uploadToDropbox(content, currentZipFileName)
+                    .then(() => {
+                        statusText.innerText = 'Dropbox 업로드 완료! (로컬 저장됨)';
+                        document.getElementById('openDropboxBtn').style.display = 'block';
+                    })
+                    .catch((err) => {
+                        console.error('Dropbox 업로드 실패:', err);
+                        statusText.innerText = '로컬 저장됨 (Dropbox 실패: ' + err.message + ')';
+                    });
             }
         } else if (useDrive) {
             const isManual = driveSettings.manualUpload;
             
             if (isManual) {
-                statusText.innerText = "로컬 저장 완료! 확인 후 Drive에 업로드하세요.";
+                statusText.innerText = "압축 완료! 확인 후 Drive에 업로드하세요.";
                 document.getElementById('uploadToCloudBtn').style.display = 'block';
                 document.getElementById('uploadToCloudBtn').disabled = false;
             } else {
-                try {
-                    statusText.innerText = 'Google Drive에 업로드 중...';
-                    await uploadToGoogleDrive(content, currentZipFileName);
-                    statusText.innerText = '로컬 저장 & Drive 업로드 완료!';
-                    document.getElementById('openDriveBtn').style.display = 'block';
-                } catch (error) {
-                    console.error('Drive 업로드 실패:', error);
-                    statusText.innerText = '로컬 저장 완료! (Drive 업로드 실패: ' + error.message + ')';
-                }
+                statusText.innerText = 'Google Drive에 업로드 중...';
+                uploadToGoogleDrive(content, currentZipFileName)
+                    .then(() => {
+                        statusText.innerText = 'Drive 업로드 완료! (로컬 저장됨)';
+                        document.getElementById('openDriveBtn').style.display = 'block';
+                    })
+                    .catch((err) => {
+                        console.error('Drive 업로드 실패:', err);
+                        statusText.innerText = '로컬 저장됨 (Drive 실패: ' + err.message + ')';
+                    });
             }
         }
+        
+        // 2. 0.5초 후 로컬 다운로드 (업로드 연결 안정화 대기)
+        setTimeout(() => {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(content);
+            link.download = currentZipFileName;
+            link.click();
+            
+            if (!useDropbox && !useDrive) {
+                statusText.innerText = "로컬 저장 완료!";
+            }
+            openFilesBtn.style.display = 'block';
+        }, 500); // 0.5초 지연
     });
 
     async function processImage(file) {
