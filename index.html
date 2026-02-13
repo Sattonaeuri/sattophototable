@@ -298,6 +298,7 @@
         <input type="file" id="imageInput" multiple accept="image/jpeg,image/jpg,image/heic,image/heif" style="display: none;">
         <button class="btn-blue" onclick="document.getElementById('imageInput').click()">📸 사진 선택 & 작업 시작</button>
         <div id="status">대기 중...</div>
+        <button id="cancelUploadBtn" class="btn-red" onclick="cancelUpload()" style="display: none; width: 100%; margin-top: 10px;">❌ 업로드 취소</button>
         <button id="openFilesBtn" class="btn-green" onclick="openFilesApp()">📂 파일 앱 열기</button>
         <button id="uploadToCloudBtn" class="btn-purple" onclick="manualUploadToCloud()" style="display: none;">☁️ 클라우드에 업로드</button>
         <button id="openDropboxBtn" class="btn-purple" onclick="openDropboxFolder()" style="display: none;">📂 Dropbox에서 보기</button>
@@ -359,6 +360,34 @@
         
         <button class="btn-blue" id="dropboxConnectBtn" onclick="connectDropbox()">Dropbox 계정 연결</button>
         <button class="btn-red" id="dropboxDisconnectBtn" onclick="disconnectDropbox()" style="display: none; width: 100%;">연결 해제</button>
+        
+        <div style="margin-top: 15px;">
+            <label style="display: block; font-size: 14px; color: var(--text-secondary); margin-bottom: 5px;">
+                📁 저장 폴더:
+            </label>
+            <input type="text" id="dropboxFolderPath" 
+                   placeholder="/현장사진" 
+                   value="/현장사진"
+                   style="width: 100%; padding: 12px; border: 1px solid var(--border-color); 
+                          border-radius: 8px; font-size: 14px; background: var(--bg-tertiary); 
+                          color: var(--text-primary); box-sizing: border-box;"
+                   onchange="saveDropboxFolder()">
+            <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 5px;">
+                예: /현장사진, /Photos, /Work 등
+            </div>
+        </div>
+        
+        <div class="toggle-row" style="margin-top: 15px;">
+            <span class="toggle-label">날짜별 하위 폴더 생성</span>
+            <label class="switch">
+                <input type="checkbox" id="dropboxDateFolder" onchange="saveDropboxFolder()" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="setting-description">
+            ON: /현장사진/2026/02/ <br>
+            OFF: /현장사진/
+        </div>
         
         <div class="toggle-row" style="margin-top: 15px;">
             <span class="toggle-label">Dropbox 자동 업로드</span>
@@ -429,7 +458,7 @@
     const tableSizeKey = 'photo_pro_table_size';
     
     // ========== Google Drive API 설정 ==========
-    const GOOGLE_CLIENT_ID = '1020242242798-ai14uvgmjsvmvbqp4fpb2unb6hjnqrr8.apps.googleusercontent.com';
+    const GOOGLE_CLIENT_ID = '020242242798-ai14uvgmjsvmvbqp4fpb2unb6hjnqrr8.apps.googleusercontent.com';
     const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file';
     
     // ========== Dropbox OAuth PKCE 설정 ==========
@@ -445,6 +474,7 @@
     let dropboxAccessToken = null;
     let dropboxRefreshToken = null;
     let dropboxLastPath = null;
+    let currentUploadXHR = null; // 업로드 취소용
     
     let currentZipBlob = null;
     let currentZipFileName = null;
@@ -922,7 +952,63 @@
         }
     }
 
-    // Dropbox 업로드 (iOS Safari 전용 - FileReader + ArrayBuffer + 타임아웃)
+    // Dropbox 폴더 설정 저장
+    function saveDropboxFolder() {
+        const folderPath = document.getElementById('dropboxFolderPath').value.trim() || '/현장사진';
+        const useDateFolder = document.getElementById('dropboxDateFolder').checked;
+        
+        localStorage.setItem('dropbox_folder_path', folderPath);
+        localStorage.setItem('dropbox_date_folder', useDateFolder);
+        
+        console.log('Dropbox 폴더 설정 저장:', folderPath, '날짜별:', useDateFolder);
+    }
+
+    // Dropbox 폴더 설정 로드
+    function loadDropboxFolder() {
+        const folderPath = localStorage.getItem('dropbox_folder_path') || '/현장사진';
+        const useDateFolder = localStorage.getItem('dropbox_date_folder') !== 'false'; // 기본 true
+        
+        document.getElementById('dropboxFolderPath').value = folderPath;
+        document.getElementById('dropboxDateFolder').checked = useDateFolder;
+    }
+
+    // Dropbox 저장 경로 생성
+    function getDropboxPath(fileName) {
+        let folderPath = localStorage.getItem('dropbox_folder_path') || '/현장사진';
+        const useDateFolder = localStorage.getItem('dropbox_date_folder') !== 'false';
+        
+        // 시작 슬래시 확인
+        if (!folderPath.startsWith('/')) {
+            folderPath = '/' + folderPath;
+        }
+        
+        // 날짜별 하위 폴더 추가
+        if (useDateFolder) {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            folderPath = `${folderPath}/${year}/${month}`;
+        }
+        
+        // 마지막 슬래시 제거 (있으면)
+        if (folderPath.endsWith('/')) {
+            folderPath = folderPath.slice(0, -1);
+        }
+        
+        return `${folderPath}/${fileName}`;
+    }
+
+    // 업로드 취소
+    function cancelUpload() {
+        if (currentUploadXHR) {
+            currentUploadXHR.abort();
+            currentUploadXHR = null;
+            statusText.innerText = '업로드가 취소되었습니다.';
+            document.getElementById('cancelUploadBtn').style.display = 'none';
+        }
+    }
+
+    // Dropbox 업로드 (진행률 표시 + 스마트 타임아웃)
     async function uploadToDropbox(blob, fileName) {
         if (!dropboxAccessToken) {
             throw new Error('Dropbox 연결 정보가 없습니다.');
@@ -931,32 +1017,67 @@
         // 1. 파일명 안전하게 처리
         const safeFileName = fileName.replace(/[:*?"<>|]/g, ''); 
         
-        // 2. 헤더 생성 (한글 깨짐 방지)
+        // 2. 저장 경로 생성 (폴더 설정 + 날짜별)
+        const fullPath = getDropboxPath(safeFileName);
+        
+        // 3. 헤더 생성 (한글 깨짐 방지)
         const dropboxArg = JSON.stringify({
-            path: '/' + safeFileName,
+            path: fullPath,
             mode: 'add',
             autorename: true,
             mute: false
         }).replace(/[\u007f-\uffff]/g, (c) => '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4));
 
-        // 3. [핵심] FileReader로 Blob을 ArrayBuffer로 변환 후 전송
+        console.log('📦 Dropbox 업로드 경로:', fullPath);
+
+        // 4. FileReader로 Blob을 ArrayBuffer로 변환 후 전송
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             
-            // 데이터 읽기 성공 시 실행
             reader.onload = function() {
                 const arrayBuffer = reader.result;
                 const xhr = new XMLHttpRequest();
                 
-                // 타임아웃 설정 (60초 - 대용량 파일 대비)
-                xhr.timeout = 60000;
+                // 전역 변수에 저장 (취소용)
+                currentUploadXHR = xhr;
+                
+                // 취소 버튼 표시
+                document.getElementById('cancelUploadBtn').style.display = 'block';
+                
+                // 스마트 타임아웃: 진행이 멈추면 30초 후 중단
+                let lastProgressTime = Date.now();
+                let progressCheckInterval = setInterval(() => {
+                    if (Date.now() - lastProgressTime > 30000) {
+                        clearInterval(progressCheckInterval);
+                        xhr.abort();
+                        reject(new Error('업로드가 30초간 진행되지 않았습니다.'));
+                    }
+                }, 1000);
                 
                 xhr.open('POST', 'https://content.dropboxapi.com/2/files/upload');
                 xhr.setRequestHeader('Authorization', 'Bearer ' + dropboxAccessToken);
                 xhr.setRequestHeader('Content-Type', 'application/octet-stream');
                 xhr.setRequestHeader('Dropbox-API-Arg', dropboxArg);
 
+                // 진행률 표시
+                xhr.upload.onprogress = (event) => {
+                    if (event.lengthComputable) {
+                        lastProgressTime = Date.now(); // 진행 시간 갱신
+                        
+                        const percent = Math.round((event.loaded / event.total) * 100);
+                        const loadedMB = (event.loaded / 1048576).toFixed(1);
+                        const totalMB = (event.total / 1048576).toFixed(1);
+                        
+                        statusText.innerText = 
+                            `Dropbox 업로드 중... ${percent}% (${loadedMB}MB / ${totalMB}MB)`;
+                    }
+                };
+
                 xhr.onload = () => {
+                    clearInterval(progressCheckInterval);
+                    currentUploadXHR = null;
+                    document.getElementById('cancelUploadBtn').style.display = 'none';
+                    
                     if (xhr.status >= 200 && xhr.status < 300) {
                         const result = JSON.parse(xhr.responseText);
                         dropboxLastPath = result.path_display;
@@ -968,23 +1089,27 @@
                 };
 
                 xhr.onerror = () => {
+                    clearInterval(progressCheckInterval);
+                    currentUploadXHR = null;
+                    document.getElementById('cancelUploadBtn').style.display = 'none';
                     reject(new Error('네트워크 연결 끊김 (iOS PWA 제한)'));
                 };
 
-                xhr.ontimeout = () => {
-                    reject(new Error('업로드 시간 초과 (60초)'));
+                xhr.onabort = () => {
+                    clearInterval(progressCheckInterval);
+                    currentUploadXHR = null;
+                    document.getElementById('cancelUploadBtn').style.display = 'none';
+                    reject(new Error('사용자가 업로드를 취소했습니다.'));
                 };
 
-                // 변환된 ArrayBuffer 데이터를 전송
+                // ArrayBuffer 전송
                 xhr.send(arrayBuffer);
             };
 
-            // 데이터 읽기 실패 시 실행
             reader.onerror = function() {
                 reject(new Error('파일 읽기 실패 (I/O Error). 다시 시도해주세요.'));
             };
 
-            // Blob 읽기 시작
             reader.readAsArrayBuffer(blob);
         });
     }
@@ -1625,6 +1750,7 @@
         updateTmplList(); 
         loadTheme();
         loadTableSize(); // 표 크기 설정 로드
+        loadDropboxFolder(); // Dropbox 폴더 설정 로드
         
         // 플랫폼별 버튼 텍스트
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
