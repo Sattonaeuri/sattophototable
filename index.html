@@ -6,7 +6,6 @@
     <title>현장 사진 Pro</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/piexifjs/1.0.6/piexif.min.js"></script>
-    <script src="https://apis.google.com/js/api.js"></script>
     <style>
         /* 다크/라이트 모드 변수 */
         :root {
@@ -166,7 +165,7 @@
         .btn-purple { background: #bf5af2; color: white; width: 100%; margin-top: 10px; }
         
         #status { text-align: center; margin-top: 15px; font-weight: 600; color: #0a84ff; }
-        #openFilesBtn, #openDriveBtn { display: none; }
+        #openFilesBtn { display: none; }
         
         /* 테마 토글 스위치 */
         .toggle-row {
@@ -300,9 +299,8 @@
         <div id="status">대기 중...</div>
         <button id="cancelUploadBtn" class="btn-red" onclick="cancelUpload()" style="display: none; width: 100%; margin-top: 10px;">❌ 업로드 취소</button>
         <button id="openFilesBtn" class="btn-green" onclick="openFilesApp()">📂 파일 앱 열기</button>
-        <button id="uploadToCloudBtn" class="btn-purple" onclick="manualUploadToCloud()" style="display: none;">☁️ 클라우드에 업로드</button>
+        <button id="uploadToCloudBtn" class="btn-purple" onclick="manualUploadToCloud()" style="display: none;">☁️ Dropbox에 업로드</button>
         <button id="openDropboxBtn" class="btn-purple" onclick="openDropboxFolder()" style="display: none;">📂 Dropbox에서 보기</button>
-        <button id="openDriveBtn" class="btn-purple" onclick="openDriveFolder()" style="display: none;">📂 Drive에서 보기</button>
     </div>
 
     <div class="card">
@@ -325,34 +323,7 @@
     </div>
 
     <div class="card">
-        <h3>☁️ Google Drive 연동</h3>
-        <div class="cloud-status" id="driveStatus">
-            <div class="status-indicator" id="driveIndicator"></div>
-            <span class="cloud-email" id="driveEmail">연결되지 않음</span>
-        </div>
-        <button class="btn-blue" id="driveConnectBtn" onclick="connectGoogleDrive()">Google 계정 연결</button>
-        <button class="btn-red" id="driveDisconnectBtn" onclick="disconnectGoogleDrive()" style="display: none; width: 100%;">연결 해제</button>
-        
-        <div class="toggle-row" style="margin-top: 15px;">
-            <span class="toggle-label">Drive 자동 업로드</span>
-            <label class="switch">
-                <input type="checkbox" id="driveAutoUpload" onchange="toggleDriveSettings()">
-                <span class="slider"></span>
-            </label>
-        </div>
-        
-        <div class="toggle-row" style="margin-top: 15px;">
-            <span class="toggle-label">확인 후 업로드</span>
-            <label class="switch">
-                <input type="checkbox" id="driveManualUpload" onchange="toggleDriveSettings()">
-                <span class="slider"></span>
-            </label>
-        </div>
-        <div class="setting-description">⚠️ 1시간마다 재연결 필요</div>
-    </div>
-
-    <div class="card">
-        <h3>📦 Dropbox 연동 (권장)</h3>
+        <h3>📦 Dropbox 연동</h3>
         <div class="cloud-status" id="dropboxStatus">
             <div class="status-indicator" id="dropboxIndicator"></div>
             <span class="cloud-email" id="dropboxEmail">연결되지 않음</span>
@@ -453,13 +424,8 @@
     // ========== 설정 키 ==========
     const storageKey = 'photo_pro_v8_final';
     const themeKey = 'photo_pro_theme';
-    const driveKey = 'photo_pro_drive';
     const dropboxKey = 'photo_pro_dropbox';
     const tableSizeKey = 'photo_pro_table_size';
-    
-    // ========== Google Drive API 설정 ==========
-    const GOOGLE_CLIENT_ID = '020242242798-ai14uvgmjsvmvbqp4fpb2unb6hjnqrr8.apps.googleusercontent.com';
-    const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file';
     
     // ========== Dropbox OAuth PKCE 설정 ==========
     const DROPBOX_CLIENT_ID = 'eafpljx4claj83h';
@@ -467,14 +433,6 @@
     
     // ========== 전역 변수 ==========
     let gapiInited = false;
-    let googleTokenClient;
-    let googleAccessToken = null;
-    let googleLastFolderId = null;
-    
-    let dropboxAccessToken = null;
-    let dropboxRefreshToken = null;
-    let dropboxLastPath = null;
-    let currentUploadXHR = null; // 업로드 취소용
     
     let currentZipBlob = null;
     let currentZipFileName = null;
@@ -972,7 +930,7 @@
         document.getElementById('dropboxDateFolder').checked = useDateFolder;
     }
 
-    // Dropbox 저장 경로 생성
+    // Dropbox 저장 경로 생성 (표의 일자 필드 기반)
     function getDropboxPath(fileName) {
         let folderPath = localStorage.getItem('dropbox_folder_path') || '/현장사진';
         const useDateFolder = localStorage.getItem('dropbox_date_folder') !== 'false';
@@ -982,12 +940,24 @@
             folderPath = '/' + folderPath;
         }
         
-        // 날짜별 하위 폴더 추가
+        // 날짜별 하위 폴더 추가 (표의 일자 필드 사용)
         if (useDateFolder) {
-            const today = new Date();
-            const year = today.getFullYear();
-            const month = String(today.getMonth() + 1).padStart(2, '0');
-            folderPath = `${folderPath}/${year}/${month}`;
+            // currentData[2].v에서 연도/월 추출
+            // 예: "2026년 02월 13일" → 2026/02
+            const dateStr = currentData[2].v; // 표의 일자 필드
+            const match = dateStr.match(/(\d{4})년 (\d{2})월/);
+            
+            if (match) {
+                const year = match[1];
+                const month = match[2];
+                folderPath = `${folderPath}/${year}/${month}`;
+            } else {
+                // 파싱 실패 시 오늘 날짜 사용
+                const today = new Date();
+                const year = today.getFullYear();
+                const month = String(today.getMonth() + 1).padStart(2, '0');
+                folderPath = `${folderPath}/${year}/${month}`;
+            }
         }
         
         // 마지막 슬래시 제거 (있으면)
@@ -1132,51 +1102,31 @@
         console.log('로컬 저장창 호출됨');
     }
 
-    // ========== 클라우드 수동 업로드 ==========
+    // ========== Dropbox 수동 업로드 ==========
     async function manualUploadToCloud() {
         if (!currentZipBlob || !currentZipFileName) {
             alert('업로드할 파일이 없습니다.');
             return;
         }
         
-        const dropboxData = localStorage.getItem(dropboxKey);
-        const driveData = localStorage.getItem(driveKey);
-        
-        const dropboxSettings = dropboxData ? JSON.parse(dropboxData) : null;
-        const driveSettings = driveData ? JSON.parse(driveData) : null;
-        
-        const useDropbox = dropboxSettings && dropboxSettings.autoUpload && dropboxAccessToken;
-        const useDrive = driveSettings && driveSettings.autoUpload && googleAccessToken;
-        
-        if (!useDropbox && !useDrive) {
-            alert('클라우드에 연결되어 있지 않습니다.\n설정에서 연결 및 자동 업로드를 활성화해주세요.');
+        if (!dropboxAccessToken) {
+            alert('Dropbox에 연결되어 있지 않습니다.\n설정에서 연결 및 자동 업로드를 활성화해주세요.');
             return;
         }
         
         try {
-            statusText.innerText = '클라우드에 업로드 중...';
+            statusText.innerText = 'Dropbox에 업로드 중...';
             document.getElementById('uploadToCloudBtn').disabled = true;
             
-            if (useDropbox) {
-                await uploadToDropbox(currentZipBlob, currentZipFileName);
-                statusText.innerText = 'Dropbox 업로드 완료!';
-                document.getElementById('openDropboxBtn').style.display = 'block';
-            } else if (useDrive) {
-                if (!await ensureValidGoogleToken()) {
-                    alert('Google Drive 연결이 만료되었습니다.\n설정에서 다시 연결해주세요.');
-                    document.getElementById('uploadToCloudBtn').disabled = false;
-                    return;
-                }
-                await uploadToGoogleDrive(currentZipBlob, currentZipFileName);
-                statusText.innerText = 'Drive 업로드 완료!';
-                document.getElementById('openDriveBtn').style.display = 'block';
-            }
+            await uploadToDropbox(currentZipBlob, currentZipFileName);
             
+            statusText.innerText = '✅ Dropbox 업로드 완료!';
             document.getElementById('uploadToCloudBtn').style.display = 'none';
+            document.getElementById('openDropboxBtn').style.display = 'block';
         } catch (error) {
             console.error('업로드 실패:', error);
             statusText.innerText = '업로드 실패: ' + error.message;
-            alert('업로드에 실패했습니다.\n' + error.message + '\n\n설정에서 다시 연결해주세요.');
+            alert('업로드에 실패했습니다.\n' + error.message);
             document.getElementById('uploadToCloudBtn').disabled = false;
         }
     }
@@ -1352,19 +1302,12 @@
         currentZipBlob = content;
         currentZipFileName = `${zipFileName}.zip`;
         
-        // 클라우드 설정 확인
+        // Dropbox 설정 확인
         const dropboxData = localStorage.getItem(dropboxKey);
-        const driveData = localStorage.getItem(driveKey);
-        
         const dropboxSettings = dropboxData ? JSON.parse(dropboxData) : null;
-        const driveSettings = driveData ? JSON.parse(driveData) : null;
-        
         const useDropbox = dropboxSettings && dropboxSettings.autoUpload && dropboxAccessToken;
-        const useDrive = !useDropbox && driveSettings && driveSettings.autoUpload && googleAccessToken;
         
-        // ========== [핵심] 완전 직렬 실행: 업로드 완료 → 다운로드 ==========
-        
-        // 1. Dropbox 자동 업로드 (await로 완료 대기)
+        // ========== Dropbox 자동 업로드 (완전 직렬 실행) ==========
         if (useDropbox && !dropboxSettings.manualUpload) {
             try {
                 statusText.innerText = 'Dropbox에 업로드 중... (창을 닫지 마세요)';
@@ -1378,26 +1321,14 @@
                 alert('드롭박스 업로드에 실패했습니다.\n로컬 저장을 시작합니다.');
             }
         }
-        // 2. Google Drive 자동 업로드 (await로 완료 대기)
-        else if (useDrive && !driveSettings.manualUpload) {
-            try {
-                statusText.innerText = 'Google Drive에 업로드 중...';
-                await uploadToGoogleDrive(content, currentZipFileName);
-                statusText.innerText = '✅ Drive 업로드 완료!';
-                document.getElementById('openDriveBtn').style.display = 'block';
-            } catch (err) {
-                console.error('Drive 업로드 실패:', err);
-                statusText.innerText = '❌ Drive 실패: ' + err.message;
-            }
-        }
-        // 3. 수동 업로드 모드
-        else if ((useDropbox && dropboxSettings.manualUpload) || (useDrive && driveSettings.manualUpload)) {
+        // 수동 업로드 모드
+        else if (useDropbox && dropboxSettings.manualUpload) {
             statusText.innerText = "압축 완료! 확인 후 업로드하세요.";
             document.getElementById('uploadToCloudBtn').style.display = 'block';
             document.getElementById('uploadToCloudBtn').disabled = false;
         }
         
-        // 4. [가장 중요] 업로드 완전히 끝난 후 로컬 저장
+        // 업로드 완전히 끝난 후 로컬 저장
         saveToLocal(content, currentZipFileName);
     });
 
@@ -1762,15 +1693,7 @@
             document.getElementById('openFilesBtn').textContent = '📂 파일 앱 열기';
         }
         
-        // Google API 초기화
-        if (typeof gapi !== 'undefined') {
-            gapiLoaded();
-        }
-        if (typeof google !== 'undefined') {
-            gisLoaded();
-        }
-        
-        // Dropbox OAuth 콜백 처리 (최우선)
+        // Dropbox OAuth 콜백 처리
         if (window.location.search.includes('code=')) {
             await handleDropboxCallback();
         }
@@ -1780,6 +1703,5 @@
         await updateDropboxStatus();
     };
 </script>
-<script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
 </body>
 </html>
